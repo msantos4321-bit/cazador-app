@@ -43,8 +43,84 @@ const PRENDAS = ["jean", "pantalon", "pantalón", "camisa", "playera", "blusa", 
 const CALZADO = ["tenis", "zapato", "bota", "sandalia", "chancla"];
 
 const tiene = (texto, lista) => lista.some((p) => quitarAcentos(texto.toLowerCase()).includes(quitarAcentos(p)));
+/** Palabra completa (para marcas cortas como "mg" o "vw" que aparecen dentro de otras palabras). */
+const tieneMarca = (texto, lista) => lista.some((p) => new RegExp(`\\b${quitarAcentos(p)}\\b`).test(quitarAcentos(texto.toLowerCase())));
+
+const MARCAS_AUTO = ["toyota", "honda", "nissan", "ford", "chevrolet", "chevy", "mazda", "kia", "hyundai", "jeep",
+  "dodge", "gmc", "volkswagen", "vw", "bmw", "mercedes", "audi", "tesla", "subaru", "lexus", "acura", "infiniti",
+  "mitsubishi", "buick", "cadillac", "chrysler", "volvo", "seat", "suzuki", "mg"];
 
 export const CATEGORIAS = [
+  {
+    id: "auto",
+    nombre: "Auto",
+    palabras: ["carro", "auto$", "autos$", "coche", "camioneta", "pickup", "troca", "sedan", "sedán", "suv$", "minivan", "copart",
+      "seminuevo", ...MARCAS_AUTO.map((m) => m + "$")],
+    preguntas: (texto) => [
+      {
+        clave: "estado",
+        texto: "¿Nuevo o usado?",
+        opciones: [
+          { valor: "usado", etiqueta: "Usado o seminuevo", ayuda: "Lotes y agencias de los dos lados" },
+          { valor: "nuevo", etiqueta: "Nuevo", ayuda: "Promociones de agencia" },
+          { valor: "subasta", etiqueta: "De subasta (Copart)", ayuda: "Más barato, pero con daño y más trámite" },
+        ],
+      },
+      tieneMarca(texto, MARCAS_AUTO) ? null : {
+        clave: "modelo",
+        tipo: "texto",
+        texto: "¿Qué marca y modelo?",
+        placeholder: "Ej. Toyota Corolla, Honda CR-V",
+        opciones: [{ valor: "recomiendame", etiqueta: "Recomiéndame uno", ayuda: "Te propongo según lo que necesitas" }],
+      },
+      {
+        clave: "uso",
+        texto: "¿Para qué lo vas a usar más?",
+        opciones: [
+          { valor: "ciudad", etiqueta: "Para moverme en la ciudad", ayuda: "Que gaste poca gasolina" },
+          { valor: "familia", etiqueta: "Para la familia", ayuda: "Espacio y seguridad" },
+          { valor: "trabajo", etiqueta: "Para trabajo o carga" },
+          { valor: "carretera", etiqueta: "Para carretera y viajes" },
+        ],
+      },
+      {
+        clave: "anios",
+        texto: "¿De qué año, más o menos?",
+        opciones: [
+          { valor: "0-3", etiqueta: "Casi nuevo", ayuda: "De 3 años para acá" },
+          { valor: "4-7", etiqueta: "De 4 a 7 años" },
+          { valor: "8+", etiqueta: "De 8 años o más", ayuda: "Más barato" },
+          { valor: "cualquiera", etiqueta: "Me da igual" },
+        ],
+      },
+      {
+        clave: "km",
+        texto: "¿Cuántos kilómetros como máximo?",
+        opciones: [
+          { valor: "60000", etiqueta: "Menos de 60,000 km" },
+          { valor: "120000", etiqueta: "Menos de 120,000 km" },
+          { valor: "cualquiera", etiqueta: "Me da igual" },
+        ],
+      },
+      {
+        clave: "presupuesto",
+        tipo: "texto",
+        texto: "¿Cuánto quieres gastar como máximo?",
+        placeholder: "Ej. 250,000 pesos o 15,000 dólares",
+        opciones: [],
+      },
+      {
+        clave: "zona",
+        texto: "¿Dónde lo buscamos?",
+        opciones: [
+          { valor: "tj", etiqueta: "Tijuana, Rosarito y Tecate" },
+          { valor: "bc", etiqueta: "Toda Baja California", ayuda: "Incluye Mexicali y Ensenada" },
+          { valor: "sd", etiqueta: "San Diego y alrededores", ayuda: "Ojo: traerlo a México tiene trámite" },
+          { valor: "ambos", etiqueta: "De los dos lados" },
+        ],
+      },
+    ],
+  },
   {
     id: "ropa",
     nombre: "Ropa y calzado",
@@ -203,12 +279,13 @@ export const GENERAL = { id: "otro", nombre: "Otro", palabras: [], preguntas: ()
 export function detectar(texto) {
   const t = quitarAcentos(texto.toLowerCase());
   for (const c of CATEGORIAS) {
-    if (c.palabras.some((p) => new RegExp(`\\b${quitarAcentos(p)}`).test(t))) return c;
+    if (c.palabras.some((p) => new RegExp(`\\b${quitarAcentos(p.replace(/\$$/, ""))}${p.endsWith("$") ? "\\b" : ""}`).test(t))) return c;
   }
   return GENERAL;
 }
 
 export function preguntasPara(categoria, texto) {
+  if (categoria.id === "auto") return categoria.preguntas(texto).filter(Boolean);  // trae su propio presupuesto y zona
   return [...categoria.preguntas(texto).filter(Boolean), PRESUPUESTO, tiendaFavorita(categoria), LADO];
 }
 
@@ -254,3 +331,29 @@ export function quitarAcentos(s) {
 }
 
 export { TAMANOS_TELE };
+
+/** Sugerencias mientras escribe: frases completas listas para tocar. */
+export const SUGERENCIAS = [
+  "Televisión de 50 pulgadas", "Televisión de 55 pulgadas", "Televisión de 65 pulgadas",
+  "Aspiradora robot que trapee", "Aspiradora inalámbrica",
+  "Celular Samsung", "iPhone", "Audífonos inalámbricos", "Bocina bluetooth",
+  "Laptop para la escuela", "Laptop para trabajo", "iPad",
+  "Refrigerador", "Lavadora", "Microondas", "Minisplit",
+  "Jeans Levi's 501", "Tenis para correr", "Chamarra de invierno", "Ropa de niño",
+  "Toyota Corolla usado", "Honda CR-V usada", "Camioneta familiar usada", "Pickup usada", "Auto de subasta en Copart",
+];
+
+export function sugerir(texto, extras = []) {
+  const t = quitarAcentos(texto.toLowerCase().trim());
+  if (t.length < 2) return [];
+  const palabras = t.split(/\s+/);
+  const vistos = new Set();
+  return [...extras, ...SUGERENCIAS]
+    .filter((s) => {
+      const n = quitarAcentos(s.toLowerCase());
+      if (vistos.has(n) || n === t) return false;
+      vistos.add(n);
+      return palabras.every((p) => n.includes(p));
+    })
+    .slice(0, 6);
+}

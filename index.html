@@ -83,6 +83,11 @@ a.tarjeta:active{transform:scale(.99)}
 @keyframes latido{50%{transform:scale(1.08)}}
 @media (prefers-reduced-motion: reduce){.microfono.escuchando{animation:none}}
 .destacada{border:2px solid var(--acento)}
+.sugerencias{list-style:none;margin:-4px 0 0;padding:6px;background:var(--tarjeta);border:2px solid var(--acento);border-radius:16px;display:flex;flex-direction:column}
+.sugerencia{width:100%;text-align:left;font:inherit;font-size:19px;color:var(--suave);background:none;border:0;border-radius:12px;padding:12px;min-height:52px;cursor:pointer}
+.sugerencias li+li .sugerencia{border-top:1px solid var(--linea);border-radius:0}
+.sugerencia b{color:var(--tinta);font-weight:600}.sugerencia .ya{color:var(--suave)}
+.sugerencia:active,.sugerencia:focus-visible{background:var(--gris-f)}
 .nota{background:var(--amarillo-f);color:var(--amarillo-t);border-radius:16px;padding:12px 14px}
 ul.umbrales,ul.tiendas{list-style:none;margin:0;padding:0}
 ul.umbrales li,ul.tiendas li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--linea)}

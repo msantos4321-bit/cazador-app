@@ -1,6 +1,6 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
 import { SUPABASE_URL, SUPABASE_KEY, BOT_TELEGRAM } from "./config.js";
-import { detectar, preguntasPara, esLiga, quitarAcentos } from "./categorias.js";
+import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir } from "./categorias.js";
 
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
 const $app = document.getElementById("app");
@@ -240,21 +240,42 @@ function pantallaAgregar() {
       <a class="volver" href="#/hoy">‹ Mi lista</a>
       <p class="ceja">Buscar algo</p>
       <h1>¿Qué quieres comprar?</h1>
-      <p class="suave">Escríbelo como lo dirías en voz alta. También puedes pegar la liga de una tienda.</p>
+      <p class="suave">Escríbelo como lo dirías en voz alta. También puedes pegar la liga de una tienda o de un anuncio de auto (Marketplace, Copart…) para que te diga si el precio es bueno.</p>
       <form id="f-que" class="pila">
         <div class="con-microfono">
           <textarea id="que" rows="2" required placeholder="Una televisión de 50 pulgadas"></textarea>
           <button type="button" id="mic" class="microfono" aria-label="Decirlo con la voz" hidden>🎤</button>
         </div>
+        <ul id="sugerencias" class="sugerencias" role="listbox" aria-label="Sugerencias" hidden></ul>
         <button class="boton principal" type="submit">Siguiente</button>
       </form>
       <p class="ceja">Ejemplos</p>
       <div class="chips">
-        ${["Televisión de 50 pulgadas", "Aspiradora robot que trapee", "Celular para mi mamá", "Laptop para la escuela"].map((e) => `<button type="button" class="chip">${e}</button>`).join("")}
+        ${["Televisión de 50 pulgadas", "Aspiradora robot que trapee", "Jeans Levi's 501", "Camioneta familiar usada"].map((e) => `<button type="button" class="chip">${e}</button>`).join("")}
       </div>
     </main>${barra("agregar")}`);
   const que = document.getElementById("que");
   document.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { que.value = c.textContent; que.focus(); }));
+  // Sugerencias mientras escribe: lo que ya vigilamos, sus búsquedas recientes y frases comunes
+  const lista = document.getElementById("sugerencias");
+  let extras = [];
+  Promise.all([
+    db.from("productos").select("nombre").eq("activo", true),
+    db.from("solicitudes").select("texto").order("creado", { ascending: false }).limit(10),
+  ]).then(([p, s]) => { extras = [...(s.data || []).map((x) => x.texto), ...(p.data || []).map((x) => x.nombre)]; });
+  que.addEventListener("input", () => {
+    const ops = esLiga(que.value) ? [] : sugerir(que.value, extras);
+    lista.hidden = !ops.length;
+    const t = que.value.trim();
+    lista.innerHTML = ops.map((o) => {
+      const i = quitarAcentos(o.toLowerCase()).indexOf(quitarAcentos(t.toLowerCase()));
+      const html = i >= 0 ? `${esc(o.slice(0, i))}<span class="ya">${esc(o.slice(i, i + t.length))}</span><b>${esc(o.slice(i + t.length))}</b>` : `<b>${esc(o)}</b>`;
+      return `<li><button type="button" class="sugerencia" data-v="${esc(o)}">${html}</button></li>`;
+    }).join("");
+    lista.querySelectorAll(".sugerencia").forEach((b) => (b.onclick = () => {
+      que.value = b.dataset.v; lista.hidden = true; document.getElementById("f-que").requestSubmit();
+    }));
+  });
   activarMicrofono(que);
   document.getElementById("f-que").onsubmit = (e) => {
     e.preventDefault();
@@ -353,7 +374,7 @@ function pantallaParaQuien() {
       categoria: flujo.categoria.id,
       respuestas: flujo.respuestas,
       para: para || null,
-      lado: flujo.respuestas.lado || "ambos",
+      lado: flujo.respuestas.lado || { tj: "mx", bc: "mx", sd: "us" }[flujo.respuestas.zona] || "ambos",
     };
     const { data, error } = await db.from("solicitudes").insert(fila).select("id").single();
     if (error) return aviso("No se pudo guardar. Revisa tu internet.", "error");
