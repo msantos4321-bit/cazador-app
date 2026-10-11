@@ -301,7 +301,22 @@ function pantallaPregunta() {
       <div class="opciones">
         ${q.opciones.map((o) => `<button class="opcion" data-v="${esc(o.valor)}"><span>${esc(o.etiqueta)}</span>${o.ayuda ? `<span class="suave">${esc(o.ayuda)}</span>` : ""}</button>`).join("")}
       </div>
+      ${q.tipo === "texto" ? `
+      <form id="f-texto" class="pila">
+        ${q.opciones.length ? `<label for="respuesta">O escríbelo</label>` : ""}
+        <input id="respuesta" autocomplete="off" placeholder="${esc(q.placeholder || "")}" value="${esc(flujo.respuestas[q.clave] && !q.opciones.some((o) => o.valor === flujo.respuestas[q.clave]) ? flujo.respuestas[q.clave] : "")}">
+        <button class="boton principal" type="submit">Siguiente</button>
+      </form>` : ""}
     </main>`);
+  const formTexto = document.getElementById("f-texto");
+  if (formTexto) formTexto.onsubmit = (e) => {
+    e.preventDefault();
+    const valor = document.getElementById("respuesta").value.trim();
+    if (!valor) return aviso(q.opciones.length ? "Escribe algo o toca una de las opciones." : "Escribe tu respuesta para seguir.");
+    flujo.respuestas[q.clave] = valor;
+    flujo.paso++;
+    pantallaPregunta();
+  };
   document.getElementById("atras").onclick = () => {
     if (flujo.paso === 0) return pantallaAgregar();
     flujo.paso--; pantallaPregunta();

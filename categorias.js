@@ -13,6 +13,20 @@ const PRESUPUESTO = {
   ],
 };
 
+function tiendaFavorita(categoria) {
+  const opciones = [{ valor: "cualquiera", etiqueta: "Me da igual", ayuda: "Busco en las tiendas que más convengan" }];
+  if (categoria.id === "ropa") {
+    opciones.unshift({ valor: "descuento", etiqueta: "Tiendas de descuento", ayuda: "Nordstrom Rack, Saks Off 5th, TJ Maxx, outlets" });
+  }
+  return {
+    clave: "tienda_favorita",
+    tipo: "texto",
+    texto: "¿Tienes alguna tienda favorita?",
+    placeholder: "Ej. Macy's, Nordstrom Rack",
+    opciones,
+  };
+}
+
 const LADO = {
   clave: "lado",
   texto: "¿Dónde la puedes comprar?",
@@ -23,7 +37,52 @@ const LADO = {
   ],
 };
 
+const PRENDAS = ["jean", "pantalon", "pantalón", "camisa", "playera", "blusa", "vestido", "falda", "short", "chamarra", "chaqueta",
+  "abrigo", "sudadera", "sueter", "suéter", "pijama", "traje", "saco", "corbata", "calcet", "ropa interior", "brasier",
+  "tenis", "zapato", "bota", "sandalia", "chancla", "gorra", "bolsa", "mochila", "cartera", "cinturon", "cinturón", "lentes"];
+const CALZADO = ["tenis", "zapato", "bota", "sandalia", "chancla"];
+
+const tiene = (texto, lista) => lista.some((p) => quitarAcentos(texto.toLowerCase()).includes(quitarAcentos(p)));
+
 export const CATEGORIAS = [
+  {
+    id: "ropa",
+    nombre: "Ropa y calzado",
+    palabras: ["ropa", ...PRENDAS, "levi", "nike", "adidas", "puma", "under armour", "columbia", "calvin klein", "tommy"],
+    preguntas: (texto) => [
+      {
+        clave: "para_quien",
+        texto: "¿Para quién es la ropa?",
+        opciones: [
+          { valor: "hombre", etiqueta: "Hombre" },
+          { valor: "mujer", etiqueta: "Mujer" },
+          { valor: "nino", etiqueta: "Niño" },
+          { valor: "nina", etiqueta: "Niña" },
+        ],
+      },
+      tiene(texto, PRENDAS) ? null : {
+        clave: "prenda",
+        tipo: "texto",
+        texto: "¿Qué prenda buscas?",
+        placeholder: "Jeans, chamarra, tenis…",
+        opciones: [],
+      },
+      {
+        clave: "talla",
+        tipo: "texto",
+        texto: "¿Qué talla?",
+        placeholder: tiene(texto, CALZADO) ? "Ej. 9 de EE. UU. o 27 de México" : "Ej. M, 32x32, 10",
+        opciones: [{ valor: "no-se", etiqueta: "No sé todavía" }],
+      },
+      {
+        clave: "marca",
+        tipo: "texto",
+        texto: "¿Alguna marca en especial?",
+        placeholder: "Levi's, Nike, Columbia…",
+        opciones: [{ valor: "cualquiera", etiqueta: "Me da igual" }],
+      },
+    ],
+  },
   {
     id: "tele",
     nombre: "Televisión",
@@ -150,7 +209,7 @@ export function detectar(texto) {
 }
 
 export function preguntasPara(categoria, texto) {
-  return [...categoria.preguntas(texto).filter(Boolean), PRESUPUESTO, LADO];
+  return [...categoria.preguntas(texto).filter(Boolean), PRESUPUESTO, tiendaFavorita(categoria), LADO];
 }
 
 /** Pulgadas que pidió (o null). "45 pulgadas", "45\"", "de 45". */
