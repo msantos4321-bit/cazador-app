@@ -35,7 +35,9 @@ function cuandoLlega(creado) {
   const hoy = ahora.toDateString() === dia.toDateString();
   const manana = new Date(ahora); manana.setDate(manana.getDate() + 1);
   const cuando = hoy ? "hoy" : manana.toDateString() === dia.toDateString() ? "mañana" : "en cuanto se revise";
-  return `Las opciones llegan ${cuando} como a las 7 de la noche`;
+  const minutos = (ahora - pedido) / 60000;
+  if (minutos < 45) return "Ya estoy buscando: las opciones llegan en unos 15 minutos";
+  return `Si no llegan pronto, a más tardar ${cuando} como a las 7 de la noche`;
 }
 const NIVEL = { economica: "La económica", equilibrada: "La que más conviene", mejor: "La mejor" };
 function diasPara(fecha) {
