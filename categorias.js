@@ -13,8 +13,22 @@ const PRESUPUESTO = {
   ],
 };
 
+/** Dónde se busca primero en cada categoría (el detalle y qué tiendas se leen solas: data/tiendas_por_categoria.json). */
+export const TIENDAS_SUGERIDAS = {
+  tele: "Amazon, Walmart, Costco, Best Buy, Liverpool",
+  aspiradora: "Amazon, Walmart, tiendas oficiales de la marca",
+  celular: "Amazon, Walmart, Mercado Libre, tiendas oficiales",
+  computadora: "Amazon, Walmart, Costco, Best Buy, B&H",
+  linea_blanca: "Home Depot, Costco, Walmart, Liverpool, Lowe's",
+  audio: "Amazon, Walmart, Best Buy",
+  hogar: "Amazon, Walmart, IKEA, Home Depot, Costco, Wayfair, Liverpool",
+  ropa: "Nordstrom Rack, Amazon, Macy's, Kohl's, tiendas de la marca",
+  otro: "Amazon, Walmart, Mercado Libre, Costco",
+};
+
 function tiendaFavorita(categoria) {
-  const opciones = [{ valor: "cualquiera", etiqueta: "Me da igual", ayuda: "Busco en las tiendas que más convengan" }];
+  const donde = TIENDAS_SUGERIDAS[categoria.id] || TIENDAS_SUGERIDAS.otro;
+  const opciones = [{ valor: "cualquiera", etiqueta: "Me da igual", ayuda: `Busco primero en ${donde}` }];
   if (categoria.id === "ropa") {
     opciones.unshift({ valor: "descuento", etiqueta: "Tiendas de descuento", ayuda: "Nordstrom Rack, Saks Off 5th, TJ Maxx, outlets" });
   }
@@ -22,7 +36,7 @@ function tiendaFavorita(categoria) {
     clave: "tienda_favorita",
     tipo: "texto",
     texto: "¿Tienes alguna tienda favorita?",
-    placeholder: "Ej. Macy's, Nordstrom Rack",
+    placeholder: categoria.id === "ropa" ? "Ej. Macy's, Nordstrom Rack" : "Ej. Costco, Liverpool",
     opciones,
   };
 }
@@ -45,6 +59,9 @@ const CALZADO = ["tenis", "zapato", "bota", "sandalia", "chancla"];
 const tiene = (texto, lista) => lista.some((p) => quitarAcentos(texto.toLowerCase()).includes(quitarAcentos(p)));
 /** Palabra completa (para marcas cortas como "mg" o "vw" que aparecen dentro de otras palabras). */
 const tieneMarca = (texto, lista) => lista.some((p) => new RegExp(`\\b${quitarAcentos(p)}\\b`).test(quitarAcentos(texto.toLowerCase())));
+
+const MUEBLES = ["mueble", "sofa", "sofá", "sillon", "sillón", "sala", "comedor", "colchon", "colchón", "cama",
+  "escritorio", "silla", "mesa", "librero", "closet", "cajonera", "buro", "buró", "tocador", "recamara", "recámara"];
 
 const MARCAS_AUTO = ["toyota", "honda", "nissan", "ford", "chevrolet", "chevy", "mazda", "kia", "hyundai", "jeep",
   "dodge", "gmc", "volkswagen", "vw", "bmw", "mercedes", "audi", "tesla", "subaru", "lexus", "acura", "infiniti",
@@ -117,6 +134,43 @@ export const CATEGORIAS = [
           { valor: "bc", etiqueta: "Toda Baja California", ayuda: "Incluye Mexicali y Ensenada" },
           { valor: "sd", etiqueta: "San Diego y alrededores", ayuda: "Ojo: traerlo a México tiene trámite" },
           { valor: "ambos", etiqueta: "De los dos lados" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "hogar",
+    nombre: "Hogar",
+    palabras: ["mueble", "sofa", "sofá", "sillon", "sillón", "comedor", "colchon", "colchón", "cama", "base de cama",
+      "escritorio", "silla", "mesa", "librero", "closet", "cajonera", "buro", "buró", "cocina", "sarten", "sartén",
+      "olla", "cuchillo", "vajilla", "licuadora", "cafetera", "freidora", "batidora", "tostador", "cortina", "tapete",
+      "alfombra", "lampara", "lámpara", "decoracion", "decoración", "edredon", "edredón", "sabana", "sábana", "toalla",
+      "jardin", "jardín", "asador", "parrilla", "herramienta", "taladro", "hogar", "casa"],
+    preguntas: (texto) => !tiene(texto, MUEBLES) ? [] : [
+      {
+        clave: "cuarto",
+        texto: "¿Para qué parte de la casa?",
+        opciones: [
+          { valor: "sala", etiqueta: "Sala o comedor" },
+          { valor: "recamara", etiqueta: "Recámara" },
+          { valor: "cocina", etiqueta: "Cocina" },
+          { valor: "bano", etiqueta: "Baño" },
+          { valor: "exterior", etiqueta: "Patio, jardín o cochera" },
+        ],
+      },
+      {
+        clave: "medidas",
+        tipo: "texto",
+        texto: "¿Tienes alguna medida o tamaño?",
+        placeholder: "Ej. sofá de 3 plazas, colchón matrimonial, 2 metros",
+        opciones: [{ valor: "no-importa", etiqueta: "No importa" }],
+      },
+      {
+        clave: "armado",
+        texto: "¿Te importa armarlo tú?",
+        opciones: [
+          { valor: "si", etiqueta: "No hay problema", ayuda: "Suele ser más barato" },
+          { valor: "no", etiqueta: "Que venga armado o con instalación" },
         ],
       },
     ],
@@ -339,6 +393,8 @@ export const SUGERENCIAS = [
   "Celular Samsung", "iPhone", "Audífonos inalámbricos", "Bocina bluetooth",
   "Laptop para la escuela", "Laptop para trabajo", "iPad",
   "Refrigerador", "Lavadora", "Microondas", "Minisplit",
+  "Sofá de 3 plazas", "Colchón matrimonial", "Comedor de 4 sillas", "Escritorio", "Freidora de aire",
+  "Cafetera", "Juego de sartenes", "Asador de gas", "Taladro",
   "Jeans Levi's 501", "Tenis para correr", "Chamarra de invierno", "Ropa de niño",
   "Toyota Corolla usado", "Honda CR-V usada", "Camioneta familiar usada", "Pickup usada", "Auto de subasta en Copart",
 ];

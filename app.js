@@ -26,6 +26,17 @@ const insignia = (v) => {
   const s = SEMAFORO[v] || SEMAFORO["Sin datos"];
   return `<span class="insignia ${s.clase}">${s.texto}</span>`;
 };
+/** La investigación corre una vez al día a las 6:52 pm de Tijuana. */
+function cuandoLlega(creado) {
+  const tj = (d) => new Date(d.toLocaleString("en-US", { timeZone: "America/Tijuana" }));
+  const ahora = tj(new Date()), pedido = tj(creado ? new Date(creado) : new Date());
+  const corte = new Date(pedido); corte.setHours(18, 45, 0, 0);
+  const dia = new Date(pedido); if (pedido > corte) dia.setDate(dia.getDate() + 1);
+  const hoy = ahora.toDateString() === dia.toDateString();
+  const manana = new Date(ahora); manana.setDate(manana.getDate() + 1);
+  const cuando = hoy ? "hoy" : manana.toDateString() === dia.toDateString() ? "mañana" : "en cuanto se revise";
+  return `Las opciones llegan ${cuando} como a las 7 de la noche`;
+}
 const NIVEL = { economica: "La económica", equilibrada: "La que más conviene", mejor: "La mejor" };
 function diasPara(fecha) {
   if (!fecha) return null;
@@ -110,7 +121,7 @@ async function pantallaHoy() {
     db.from("seguimientos")
       .select("id,para,precio_objetivo,precio_justo_max,no_comprar,fecha_limite,lado,producto_id,productos(nombre,moneda_referencia),veredictos(*)")
       .eq("activo", true).order("creado"),
-    db.from("solicitudes").select("id,texto,estado,actualizado")
+    db.from("solicitudes").select("id,texto,estado,actualizado,creado")
       .in("estado", ["pendiente", "buscando", "lista", "sin_resultado"]).order("creado", { ascending: false }),
   ]);
   if (segs.error) return pintar(`<main><h1>No se pudo cargar</h1><p class="suave">Revisa tu internet y vuelve a abrir.</p></main>${barra("hoy")}`);
@@ -134,7 +145,7 @@ async function pantallaHoy() {
     return `<a class="tarjeta solicitud ${lista ? "lista" : ""}" href="#/solicitud/${s.id}">
       <span class="ceja">${lista ? "¡Ya están tus opciones!" : sin ? "No encontré algo bueno" : "Buscando opciones…"}</span>
       <span class="titulo">“${esc(s.texto)}”</span>
-      <span class="suave">${lista ? "Toca para elegir una." : sin ? "Toca para ver por qué." : "Te aviso por Telegram cuando estén."}</span>
+      <span class="suave">${lista ? "Toca para elegir una." : sin ? "Toca para ver por qué." : `${cuandoLlega(s.creado)}. Te aviso por Telegram.`}</span>
     </a>`;
   }).join("");
 
@@ -398,7 +409,7 @@ async function pantallaSolicitud(id) {
         <h1>Listo, ya estoy buscando las 3 mejores opciones</h1>
         <section class="tarjeta">
           <span class="titulo">“${esc(s.texto)}”</span>
-          <p class="suave">Reviso modelos, precios en México y Estados Unidos, y si el descuento es real. Te aviso por Telegram cuando estén, normalmente el mismo día. Puedes cerrar la app.</p>
+          <p class="suave">Reviso modelos, precios en México y Estados Unidos, y si el descuento es real. ${cuandoLlega(s.creado)}; te aviso por Telegram. Puedes cerrar la app.</p>
         </section>
         ${conocidos}
         <a class="boton principal" href="#/hoy">Volver a mi lista</a>
