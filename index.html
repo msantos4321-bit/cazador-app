@@ -83,6 +83,12 @@ a.tarjeta:active{transform:scale(.99)}
 @keyframes latido{50%{transform:scale(1.08)}}
 @media (prefers-reduced-motion: reduce){.microfono.escuchando{animation:none}}
 .destacada{border:2px solid var(--acento)}
+.foto-grande{display:block;margin:-6px -8px 4px;border-radius:16px;overflow:hidden;background:#fff}
+.foto-grande img,.foto-detalle{display:block;width:100%;height:180px;object-fit:contain;background:#fff}
+.foto-detalle{border-radius:20px;border:1px solid var(--linea)}
+.tarjeta.con-foto{display:grid;grid-template-columns:72px 1fr;column-gap:14px;align-items:start}
+.tarjeta.con-foto>*:not(.miniatura){grid-column:2}
+.miniatura{grid-row:1 / span 3;width:72px;height:72px;object-fit:contain;background:#fff;border-radius:12px;border:1px solid var(--linea)}
 .sugerencias{list-style:none;margin:-4px 0 0;padding:6px;background:var(--tarjeta);border:2px solid var(--acento);border-radius:16px;display:flex;flex-direction:column}
 .sugerencia{width:100%;text-align:left;font:inherit;font-size:19px;color:var(--suave);background:none;border:0;border-radius:12px;padding:12px;min-height:52px;cursor:pointer}
 .sugerencias li+li .sugerencia{border-top:1px solid var(--linea);border-radius:0}

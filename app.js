@@ -119,7 +119,7 @@ async function pantallaHoy() {
   pintar(`<main><p class="ceja">Mi lista</p><h1>Cargando…</h1></main>${barra("hoy")}`);
   const [segs, sols] = await Promise.all([
     db.from("seguimientos")
-      .select("id,para,precio_objetivo,precio_justo_max,no_comprar,fecha_limite,lado,producto_id,productos(nombre,moneda_referencia),veredictos(*)")
+      .select("id,para,precio_objetivo,precio_justo_max,no_comprar,fecha_limite,lado,producto_id,productos(nombre,moneda_referencia,imagen,ligas),veredictos(*)")
       .eq("activo", true).order("creado"),
     db.from("solicitudes").select("id,texto,estado,actualizado,creado")
       .in("estado", ["pendiente", "buscando", "lista", "sin_resultado"]).order("creado", { ascending: false }),
@@ -151,7 +151,8 @@ async function pantallaHoy() {
 
   const tarjetas = lista.map((s) => {
     const faltan = diasPara(s.fecha_limite);
-    return `<a class="tarjeta producto" href="#/producto/${s.id}">
+    return `<a class="tarjeta producto ${s.productos?.imagen ? "con-foto" : ""}" href="#/producto/${s.id}">
+      ${s.productos?.imagen ? `<img class="miniatura" src="${esc(s.productos.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}
       <span class="cabeza"><span class="titulo">${esc(s.productos?.nombre || "Producto")}</span>${insignia(s.v?.veredicto)}</span>
       <span class="precio-linea">${s.v?.mejor_precio != null ? `${precio(s.v.mejor_precio, s.v.mejor_moneda, s.v.mejor_precio_mxn)} <span class="suave">en ${esc(s.v.mejor_tienda)}</span>` : `<span class="suave">Todavía sin precio</span>`}</span>
       <span class="suave pequeno">${s.para ? `Para ${esc(s.para)}` : ""}${s.para && faltan != null ? " · " : ""}${faltan != null && faltan >= 0 ? `faltan ${faltan} días` : ""}</span>
@@ -195,11 +196,13 @@ async function pantallaProducto(id) {
       <a class="volver" href="#/hoy">‹ Mi lista</a>
       <p class="ceja">${s.para ? `Para ${esc(s.para)}` : "Vigilando"}</p>
       <h1>${esc(p.nombre)}</h1>
+      ${p.imagen ? `<img class="foto-detalle" src="${esc(p.imagen)}" alt="${esc(p.nombre)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}
       <section class="tarjeta">
         <span class="cabeza"><span class="titulo">Hoy</span>${insignia(v?.veredicto)}</span>
         <p class="precio-grande">${v?.mejor_precio != null ? precio(v.mejor_precio, v.mejor_moneda, v.mejor_precio_mxn) : "Sin precio"}</p>
         <p class="suave">${esc(v?.razon || "Todavía no revisamos este producto. La siguiente revisión es en unas horas.")}</p>
-        ${v?.mejor_url ? `<a class="boton principal" href="${esc(v.mejor_url)}" target="_blank" rel="noopener">Ir a ${esc(v.mejor_tienda)}</a>` : ""}
+        ${v?.mejor_url ? `<a class="boton principal" href="${esc(v.mejor_url)}" target="_blank" rel="noopener">Ir a ${esc(v.mejor_tienda)} ↗</a>`
+          : (p.ligas || [])[0] ? `<a class="boton" href="${esc(p.ligas[0])}" target="_blank" rel="noopener">Ver el producto en la tienda ↗</a>` : ""}
       </section>
       ${grafica(hist || [])}
       <section class="tarjeta">
@@ -425,11 +428,13 @@ async function pantallaSolicitud(id) {
 
   const ops = (s.opciones || []).map((o, i) => `
     <section class="tarjeta opcion-final ${o.nivel === "equilibrada" ? "destacada" : ""}">
+      ${o.imagen ? `<a class="foto-grande" href="${esc(o.url || "#")}" target="_blank" rel="noopener"><img src="${esc(o.imagen)}" alt="${esc(o.nombre)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').remove()"></a>` : ""}
       <span class="ceja">${esc(NIVEL[o.nivel] || o.nivel || "")}${o.nivel === "equilibrada" ? " · recomendada" : ""}</span>
       <span class="cabeza"><span class="titulo">${esc(o.nombre)}</span>${o.veredicto ? insignia(o.veredicto) : ""}</span>
       <p class="precio-grande">${o.precio_hoy != null ? precio(o.precio_hoy, o.moneda, o.precio_mxn) : "Sin precio hoy"}</p>
       ${o.tienda ? `<p class="suave pequeno">en ${esc(o.tienda)}</p>` : ""}
       <p>${esc(o.por_que || "")}</p>
+      ${o.url ? `<a class="boton" href="${esc(o.url)}" target="_blank" rel="noopener">Ver en la tienda ↗</a>` : ""}
       ${s.estado === "lista" && o.producto_id ? `<button class="boton principal vigilar" data-i="${i}">Vigilar esta</button>` : ""}
     </section>`).join("");
 
