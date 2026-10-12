@@ -175,6 +175,10 @@ function proximaTemporada() {
 }
 
 // ---------- mi lista ----------
+function fechaHoy() {
+  const t = new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Tijuana" });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
 async function pantallaHoy() {
   pintar(esqueleto("Mi lista") + barra("hoy"));
   const desde = new Date(Date.now() - 90 * 86400000).toISOString();
@@ -213,7 +217,7 @@ async function pantallaHoy() {
     </a>` : "";
 
   const t = proximaTemporada();
-  const temporada = t ? `<div class="aviso-temporada">${t.enCurso ? `<b>Hoy es ${esc(t.nombre)}.</b> Revisamos tus precios más seguido.` : `<b>${esc(t.nombre)}</b> en ${t.dias} ${t.dias === 1 ? "día" : "días"}. Ahí suelen bajar los precios: no compres caro antes.`}</div>` : "";
+  const temporada = t ? `<div class="aviso-temporada"><span>${t.enCurso ? `<b>Hoy es ${esc(t.nombre)}.</b> Revisamos tus precios más seguido.` : `<b>${esc(t.nombre)}</b> en ${t.dias} ${t.dias === 1 ? "día" : "días"}. Ahí suelen bajar los precios: no compres caro antes.`}</span></div>` : "";
 
   const solicitudes = (sols.data || []).map((s) => {
     const lista = s.estado === "lista";
@@ -246,7 +250,7 @@ async function pantallaHoy() {
 
   pintar(`
     <main>
-      <p class="ceja">Mi lista</p>
+      <p class="ceja">${esc(fechaHoy())}</p>
       <h1>${saludo}</h1>
       ${chips ? `<div class="resumen">${chips}</div>` : ""}
       ${temporada}
@@ -350,8 +354,10 @@ function grafica(filas) {
   const linea = pts.map((p, i) => `${(i * w / (pts.length - 1)).toFixed(1)},${(h - 8 - (p - lo) / r * (h - 16)).toFixed(1)}`).join(" ");
   return `<section class="tarjeta">
     <span class="titulo">Cómo se ha movido (mejor precio de cada día)</span>
-    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Precio de ${pesos(pts[0])} a ${pesos(pts.at(-1))}">
-      <polyline points="${linea}" fill="none" stroke="var(--acento)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></svg>
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Precio de ${pesos(pts[0])} a ${pesos(pts.at(-1))}" preserveAspectRatio="none">
+      <defs><linearGradient id="relleno" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--oro)" stop-opacity=".22"/><stop offset="1" stop-color="var(--oro)" stop-opacity="0"/></linearGradient></defs>
+      <polygon points="0,${h} ${linea} ${w},${h}" fill="url(#relleno)"/>
+      <polyline points="${linea}" fill="none" stroke="var(--tinta)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
     <span class="suave pequeno">Más bajo: ${pesos(lo)} · Más alto: ${pesos(hi)} · ${pts.length} días</span>
   </section>`;
 }
@@ -705,7 +711,7 @@ async function pantallaAjustes() {
       <section class="tarjeta pila">
         <span class="titulo">Avisos por Telegram</span>
         ${conectado
-          ? `<p>✅ Conectado. Te llegan los avisos de tus productos.</p>`
+          ? `<p><span class="insignia verde">Conectado</span></p><p class="suave">Te llegan los avisos de tus productos.</p>`
           : `<p class="suave">Toca el botón, se abre Telegram y le das a <b>Iniciar</b>. Con eso quedas conectado (tarda hasta una hora en confirmarse).</p>
              <button class="boton principal" id="telegram">Conectar Telegram</button>`}
       </section>
