@@ -111,9 +111,9 @@ function pantallaCodigo(correo) {
   pintar(`
     <main class="entrar">
       <p class="ceja">Revisa tu correo</p>
-      <h1>Abre el correo que te mandamos</h1>
-      <p>Llegó a <b>${esc(correo)}</b>. Ábrelo <b>en este mismo teléfono</b> y toca el botón del mensaje (puede decir “Log In” o “Confirm your mail”). Con eso entras.</p>
-      <p class="suave">Si no aparece, búscalo en "Spam" o "Promociones". Si el correo trae un código de 6 números, escríbelo aquí:</p>
+      <h1>Escribe el código que te mandamos</h1>
+      <p>Te llegó un correo a <b>${esc(correo)}</b> que dice “Tu código para entrar a Cazador de Ofertas”. Trae un código de 6 números: escríbelo aquí abajo.</p>
+      <p class="suave">Si no aparece en un minuto, búscalo en “Spam” o “Promociones”.</p>
       <form id="f-codigo" class="pila">
         <label for="codigo">Código de 6 números</label>
         <input id="codigo" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required class="codigo" placeholder="••••••">
@@ -127,7 +127,7 @@ function pantallaCodigo(correo) {
   document.getElementById("f-codigo").onsubmit = async (e) => {
     e.preventDefault();
     const { error } = await db.auth.verifyOtp({ email: correo, token: input.value.trim(), type: "email" });
-    if (error) { input.value = ""; return aviso("Ese código no es correcto o ya venció. Intenta otra vez.", "error"); }
+    if (error) { input.value = ""; return aviso("Ese código no es correcto o ya venció. Pide otro con “Usar otro correo”.", "error"); }
     location.hash = "#/hoy";
   };
 }
@@ -140,8 +140,8 @@ const foto = (src, clase = "miniatura") => src
 const esqueleto = (titulo, n = 3) => `<main><p class="ceja">${esc(titulo)}</p><div class="esqueleto titulo-esq"></div>${"<div class='esqueleto tarjeta-esq'></div>".repeat(n)}</main>`;
 
 /** Compartir por WhatsApp (o el menú del teléfono) con foto/precio/liga. */
-function compartirBoton(texto, url) {
-  return `<button class="boton chico compartir" data-texto="${esc(texto)}" data-url="${esc(url || "")}">Mandar a la familia</button>`;
+function compartirBoton(texto, url, etiqueta = "Mandar a la familia") {
+  return `<button class="boton chico compartir" data-texto="${esc(texto)}" data-url="${esc(url || "")}">${esc(etiqueta)}</button>`;
 }
 function activarCompartir() {
   document.querySelectorAll(".compartir").forEach((b) => (b.onclick = async () => {
@@ -1065,7 +1065,10 @@ async function pantallaFamilia() {
     const { error } = await db.from("invitados").upsert({ email, nombre, busquedas_mes: cupo, vigilados_max: cupo >= 20 ? 6 : 4 }, { onConflict: "email" });
     if (error) return aviso("No se pudo invitar. Revisa el correo.", "error");
     aviso(`Listo. ${nombre} ya puede entrar con ${email}.`);
-    pantallaFamilia();
+    const texto = `Hola ${nombre}, te invité a Cazador de Ofertas, la app de la familia para comprar al mejor precio. Ábrela en tu celular, escribe tu correo (${email}) y luego el código de 6 números que te llega por correo: https://msantos4321-bit.github.io/cazador-app/`;
+    await pantallaFamilia();
+    document.getElementById("f-invitar").insertAdjacentHTML("beforebegin", `<section class="tarjeta pila invitado-listo"><span class="titulo">${esc(nombre)} ya tiene acceso</span><p class="suave">Mándale la liga por WhatsApp:</p>${compartirBoton(texto, "", "Mandar por WhatsApp")}</section>`);
+    activarCompartir();
   };
   document.querySelectorAll(".quitar").forEach((b) => (b.onclick = async () => {
     if (!confirm(`¿Quitarle el acceso a ${b.dataset.nombre}? Ya no podrá buscar ni vigilar productos nuevos.`)) return;
