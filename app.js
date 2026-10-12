@@ -428,17 +428,38 @@ async function pantallaSolicitud(id) {
     return;
   }
 
-  const ops = (s.opciones || []).map((o, i) => `
-    <section class="tarjeta opcion-final ${o.nivel === "equilibrada" ? "destacada" : ""}">
+  const tarjeta = (o, i, recomendada) => `
+    <section class="tarjeta opcion-final ${recomendada ? "destacada" : ""}">
       ${o.imagen ? `<a class="foto-grande" href="${esc(o.url || "#")}" target="_blank" rel="noopener"><img src="${esc(o.imagen)}" alt="${esc(o.nombre)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').remove()"></a>` : ""}
-      <span class="ceja">${esc(NIVEL[o.nivel] || o.nivel || "")}${o.nivel === "equilibrada" ? " · recomendada" : ""}</span>
+      ${recomendada ? `<span class="ceja">Recomendada</span>` : ""}
       <span class="cabeza"><span class="titulo">${esc(o.nombre)}</span>${o.veredicto ? insignia(o.veredicto) : ""}</span>
       <p class="precio-grande">${o.precio_hoy != null ? precio(o.precio_hoy, o.moneda, o.precio_mxn) : "Sin precio hoy"}</p>
-      ${o.tienda ? `<p class="suave pequeno">en ${esc(o.tienda)}</p>` : ""}
+      ${o.tienda ? `<p class="suave pequeno">en ${esc(o.tienda)} · ${(o.moneda || "").toUpperCase() === "MXN" ? "México" : "Estados Unidos"}</p>` : ""}
       <p>${esc(o.por_que || "")}</p>
       ${o.url ? `<a class="boton" href="${esc(o.url)}" target="_blank" rel="noopener">Ver en la tienda ↗</a>` : ""}
       ${s.estado === "lista" && o.producto_id ? `<button class="boton principal vigilar" data-i="${i}">Vigilar esta</button>` : ""}
-    </section>`).join("");
+    </section>`;
+  const opciones = (s.opciones || []).map((o, i) => ({ o, i }));
+  let yaRecomendada = false;
+  const ops = ["economica", "equilibrada", "mejor"].map((n) => {
+    const grupo = opciones.filter(({ o }) => o.nivel === n);
+    if (!grupo.length) return "";
+    return `<h2 class="nivel">${esc(NIVEL[n])}</h2>` + grupo.map(({ o, i }) => {
+      const rec = n === "equilibrada" && !yaRecomendada;
+      if (rec) yaRecomendada = true;
+      return tarjeta(o, i, rec);
+    }).join("");
+  }).join("");
+
+  const otraVez = s.estado === "lista" || s.estado === "sin_resultado" || s.estado === "elegida" ? `
+      <section class="tarjeta pila">
+        <span class="titulo">¿Quieres verlo de otra forma?</span>
+        <p class="suave">Busco otra vez con tus mismas respuestas. Llega en unos 15 minutos.</p>
+        ${s.lado !== "mx" ? `<button class="boton refinar" data-r="mx">Solo en México</button>` : ""}
+        ${s.lado !== "us" ? `<button class="boton refinar" data-r="us">Solo en Estados Unidos</button>` : ""}
+        <button class="boton refinar" data-r="mas_baratas">Más baratas</button>
+        <button class="boton refinar" data-r="otras_marcas">Otras marcas</button>
+      </section>` : "";
 
   pintar(`
     <main>
@@ -447,8 +468,21 @@ async function pantallaSolicitud(id) {
       <h1>“${esc(s.texto)}”</h1>
       ${s.nota ? `<p class="nota">${esc(s.nota)}</p>` : ""}
       ${ops || `<p class="suave">No encontré opciones buenas esta vez.</p>`}
+      ${otraVez}
       ${s.estado === "lista" ? `<button class="boton" id="ninguna">Ninguna me convence</button>` : ""}
     </main>${barra("")}`);
+  document.querySelectorAll(".refinar").forEach((b) => (b.onclick = async () => {
+    const r = b.dataset.r;
+    const lado = r === "mx" || r === "us" ? r : s.lado;
+    const etiqueta = { mx: "solo México", us: "solo Estados Unidos", mas_baratas: "más baratas", otras_marcas: "otras marcas" }[r];
+    b.disabled = true; b.textContent = "Buscando…";
+    const { data, error } = await db.from("solicitudes").insert({
+      texto: `${s.texto} · ${etiqueta}`, categoria: s.categoria, para: s.para, lado,
+      respuestas: { ...(s.respuestas || {}), lado, refinar: r, antes: s.id },
+    }).select("id").single();
+    if (error) { b.disabled = false; return aviso("No se pudo. Intenta otra vez.", "error"); }
+    location.hash = `#/solicitud/${data.id}`;
+  }));
   activarVigilar(s);
   const ninguna = document.getElementById("ninguna");
   if (ninguna) ninguna.onclick = async () => {
