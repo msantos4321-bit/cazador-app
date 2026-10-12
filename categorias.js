@@ -141,11 +141,11 @@ export const CATEGORIAS = [
   {
     id: "hogar",
     nombre: "Hogar",
-    palabras: ["mueble", "sofa", "sofá", "sillon", "sillón", "comedor", "colchon", "colchón", "cama", "base de cama",
+    palabras: ["mueble", "sofa", "sofá", "sillon", "sillón", "comedor", "colchon", "colchón", "cama$", "camas$", "base de cama",
       "escritorio", "silla", "mesa", "librero", "closet", "cajonera", "buro", "buró", "cocina", "sarten", "sartén",
       "olla", "cuchillo", "vajilla", "licuadora", "cafetera", "freidora", "batidora", "tostador", "cortina", "tapete",
       "alfombra", "lampara", "lámpara", "decoracion", "decoración", "edredon", "edredón", "sabana", "sábana", "toalla",
-      "jardin", "jardín", "asador", "parrilla", "herramienta", "taladro", "hogar", "casa"],
+      "jardin", "jardín", "asador", "parrilla", "herramienta", "taladro", "hogar", "casa$"],
     preguntas: (texto) => !tiene(texto, MUEBLES) ? [] : [
       {
         clave: "cuarto",
@@ -332,15 +332,127 @@ export const GENERAL = { id: "otro", nombre: "Otro", palabras: [], preguntas: ()
 
 export function detectar(texto) {
   const t = quitarAcentos(texto.toLowerCase());
+  // Gana la categoría con más palabras encontradas (en empate, la primera de la lista)
+  let mejor = GENERAL, puntos = 0;
   for (const c of CATEGORIAS) {
-    if (c.palabras.some((p) => new RegExp(`\\b${quitarAcentos(p.replace(/\$$/, ""))}${p.endsWith("$") ? "\\b" : ""}`).test(t))) return c;
+    const n = c.palabras.filter((p) => new RegExp(`\\b${quitarAcentos(p.replace(/\$$/, ""))}${p.endsWith("$") ? "\\b" : ""}`).test(t)).length;
+    if (n > puntos) { mejor = c; puntos = n; }
   }
-  return GENERAL;
+  return mejor;
 }
+
+const MONTO = {
+  clave: "presupuesto",
+  tipo: "texto",
+  texto: "¿Cuánto quieres gastar como máximo?",
+  placeholder: "Ej. 8,000 pesos o 300 dólares",
+  opciones: [{ valor: "sin-limite", etiqueta: "No tengo un límite" }],
+};
 
 export function preguntasPara(categoria, texto) {
   if (categoria.id === "auto") return categoria.preguntas(texto).filter(Boolean);  // trae su propio presupuesto y zona
-  return [...categoria.preguntas(texto).filter(Boolean), PRESUPUESTO, tiendaFavorita(categoria), LADO];
+  return [...categoria.preguntas(texto).filter(Boolean), PRESUPUESTO, MONTO, LADO, tiendaFavorita(categoria)];
+}
+
+/** Atajos de la pantalla de inicio: un toque y ya sabemos qué preguntar. */
+export const INICIOS = [
+  { texto: "Televisión", etiqueta: "Televisión" },
+  { texto: "Celular", etiqueta: "Celular" },
+  { texto: "Laptop", etiqueta: "Computadora" },
+  { texto: "Aspiradora robot", etiqueta: "Aspiradora" },
+  { texto: "Refrigerador", etiqueta: "Electrodoméstico" },
+  { texto: "Mueble para la casa", etiqueta: "Muebles y hogar" },
+  { texto: "Ropa", etiqueta: "Ropa y calzado" },
+  { texto: "Auto usado", etiqueta: "Auto" },
+];
+
+// ---------- entender lo que escribió o dictó ----------
+const UNIDADES = { un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9 };
+const ESPECIALES = { diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16, diecisiete: 17,
+  dieciocho: 18, diecinueve: 19, veinte: 20, veintiuno: 21, veintidos: 22, veintitres: 23, veinticuatro: 24,
+  veinticinco: 25, veintiseis: 26, veintisiete: 27, veintiocho: 28, veintinueve: 29, cien: 100, ciento: 100,
+  doscientos: 200, trescientos: 300, cuatrocientos: 400, quinientos: 500, seiscientos: 600, setecientos: 700,
+  ochocientos: 800, novecientos: 900 };
+const DECENAS = { treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90 };
+
+/** "cincuenta y cinco pulgadas" → "55 pulgadas"; "ocho mil pesos" → "8000 pesos". */
+export function numerosHablados(texto) {
+  const palabra = Object.keys({ ...UNIDADES, ...ESPECIALES, ...DECENAS }).join("|");
+  const n = `(?:${palabra}|mil)`;
+  const re = new RegExp(`\\b${n}(?:\\s+(?:y\\s+)?${n})*\\b`, "gi");
+  return texto.replace(re, (trozo) => {
+    const ps = quitarAcentos(trozo.toLowerCase()).trim().split(/\s+/);
+    if (ps.length === 1 && ["un", "una", "uno"].includes(ps[0])) return trozo; // "una tele" se queda igual
+    let total = 0, actual = 0, usado = false;
+    for (const p of ps) {
+      if (p === "y") continue;
+      if (p === "mil") { total += (actual || 1) * 1000; actual = 0; usado = true; continue; }
+      const v = ESPECIALES[p] ?? DECENAS[p] ?? UNIDADES[p];
+      if (v == null) return trozo;
+      actual += v; usado = true;
+    }
+    if (!usado) return trozo;
+    return String(total + actual);
+  });
+}
+
+/** Limpia lo que dictó: muletillas, espacios, números en palabras y la primera mayúscula. */
+export function limpiarDictado(texto) {
+  let t = ` ${texto} `.replace(/\s+(e+h+|e+m+|m{2,}|a+h+)(?=\s)/gi, " ");
+  t = numerosHablados(t).replace(/\s+/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+
+const PERSONAS = { papa: "Mi papá", mama: "Mi mamá", hijo: "Mi hijo", hija: "Mi hija", esposa: "Mi esposa", esposo: "Mi esposo",
+  nieto: "Mi nieto", nieta: "Mi nieta", abuela: "Mi abuela", abuelo: "Mi abuelo", suegra: "Mi suegra", suegro: "Mi suegro",
+  hermano: "Mi hermano", hermana: "Mi hermana", novia: "Mi novia", novio: "Mi novio" };
+
+/** Lo que ya dijo en su frase, para no volver a preguntarlo. Devuelve {respuestas, para, etiquetas}. */
+export function entender(texto, categoria) {
+  const t = quitarAcentos(texto.toLowerCase());
+  const r = {}, etiquetas = [];
+  const pon = (clave, valor, etiqueta) => { r[clave] = valor; etiquetas.push(etiqueta); };
+  let para = "";
+  const pp = t.match(/\bpara (?:mi |el |la )?(papa|mama|hijo|hija|esposa|esposo|nieto|nieta|abuela|abuelo|suegra|suegro|hermano|hermana|novia|novio)\b/);
+  if (pp) { para = PERSONAS[pp[1]]; etiquetas.push(`Para ${para.toLowerCase()}`); }
+
+  if (/\b(en|de) (mexico|tijuana|mx)\b/.test(t) && categoria.id !== "auto") pon("lado", "mx", "En México");
+  else if (/(estados unidos|\beeuu\b|\bee ?uu\b|\busa\b|san diego|del otro lado|chula vista)/.test(t) && categoria.id !== "auto") pon("lado", "us", "En Estados Unidos");
+
+  if (/\b(barat[oa]s?|economic[oa]s?)\b/.test(t)) pon("nivel", "economica", "Que sea barata");
+  else if (/\b(la mejor|el mejor|de las mejores|gama alta|premium)\b/.test(t)) pon("nivel", "mejor", "La mejor");
+
+  const m = t.match(/\b(?:menos de|hasta|maximo|no mas de|presupuesto de|de unos|como)\s*\$?\s*([\d.,]+)\s*(mil|k)?\s*(pesos|dolares|usd|dlls|dls)?/);
+  if (m && (m[2] || m[3] || Number(m[1].replace(/[.,]/g, "")) >= 100)) {
+    let n = Number(m[1].replace(/,/g, "")); if (m[2]) n *= 1000;
+    const moneda = m[3] && m[3] !== "pesos" ? "dólares" : "pesos";
+    const v = `${n.toLocaleString("es-MX")} ${moneda}`;
+    pon("presupuesto", v, `Hasta ${v}`);
+  }
+
+  const reglas = {
+    tele: [[/(videojuego|xbox|playstation|nintendo|juegos)/, "uso", "juegos", "Para videojuegos"],
+      [/(pelicula|deporte|futbol|netflix)/, "uso", "peliculas", "Películas y deportes"],
+      [/(noticia|novela)/, "uso", "noticias", "Noticias y novelas"]],
+    aspiradora: [[/trape/, "trapea", "si", "Que trapee"], [/(mascota|perro|gato)/, "mascotas", "si", "Con mascotas"],
+      [/alfombra/, "piso", "alfombra", "Con alfombra"]],
+    celular: [[/iphone/, "sistema", "iphone", "iPhone"], [/(samsung|motorola|android|xiaomi|pixel)/, "sistema", "android", "Android"],
+      [/camara/, "uso", "camara", "Buena cámara"], [/(pila|bateria)/, "uso", "bateria", "Que dure la pila"]],
+    computadora: [[/(laptop|lap\b|portatil|macbook)/, "tipo", "laptop", "Laptop"], [/escritorio/, "tipo", "escritorio", "De escritorio"],
+      [/(escuela|tarea|basica)/, "uso", "basico", "Para la escuela"], [/(diseno|video|juego|gamer)/, "uso", "pesado", "Para diseño o juegos"]],
+    ropa: [[/\b(hombre|caballero)\b/, "para_quien", "hombre", "Hombre"], [/\b(mujer|dama)\b/, "para_quien", "mujer", "Mujer"],
+      [/\bnino\b/, "para_quien", "nino", "Niño"], [/\bnina\b/, "para_quien", "nina", "Niña"]],
+    auto: [[/\b(usad[oa]|seminuev[oa])\b/, "estado", "usado", "Usado"], [/\bnuev[oa]\b/, "estado", "nuevo", "Nuevo"],
+      [/(copart|subasta)/, "estado", "subasta", "De subasta"], [/(familia|familiar)/, "uso", "familia", "Para la familia"],
+      [/(trabajo|carga|pickup|troca)/, "uso", "trabajo", "Para trabajo"], [/tijuana|rosarito|tecate/, "zona", "tj", "Tijuana y alrededores"],
+      [/mexicali|ensenada/, "zona", "bc", "Baja California"], [/san diego/, "zona", "sd", "San Diego"]],
+  };
+  for (const [re, clave, valor, etiqueta] of reglas[categoria.id] || []) if (!(clave in r) && re.test(t)) pon(clave, valor, etiqueta);
+  const pulg = categoria.id === "tele" ? pulgadas(texto) : null;
+  if (pulg && TAMANOS_TELE.includes(pulg)) etiquetas.unshift(`${pulg} pulgadas`);
+  const talla = texto.match(/\btalla\s+([\w.\/]+)/i);
+  if (talla && categoria.id === "ropa") pon("talla", talla[1], `Talla ${talla[1]}`);
+  return { respuestas: r, para, etiquetas };
 }
 
 /** Pulgadas que pidió (o null). "45 pulgadas", "45\"", "de 45". */

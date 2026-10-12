@@ -199,6 +199,53 @@ h2.seccion{font-size:25px;margin:14px 0 -2px}
 .segmento.grande-a{font-size:22px}
 .segmento[aria-checked="true"]{background:var(--tarjeta);color:var(--tinta);box-shadow:var(--sombra)}
 @media (prefers-reduced-motion: reduce){.esqueleto,.punto,.microfono.escuchando,.aviso{animation:none}a.tarjeta,.boton{transition:none}}
+
+/* buscar: dictado */
+.campo-voz{position:relative}
+.campo-voz textarea{font-size:21px;line-height:1.4;min-height:118px}
+.microfono-boton{width:100%;gap:10px;border-color:var(--linea);color:var(--tinta)}
+.microfono-boton svg{color:var(--oro)}
+.microfono-boton.escuchando{background:var(--rojo-f);border-color:transparent;color:var(--rojo-t)}
+.microfono-boton .cuadro{width:14px;height:14px;border-radius:3px;background:currentColor}
+.voz{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 14px;border-radius:var(--r);background:var(--hundido);font-size:16px}
+.voz[hidden]{display:none}
+.voz-texto{flex:1;min-width:0}
+.voz-tiempo{font-variant-numeric:tabular-nums;color:var(--suave);font-size:15px}
+.onda{display:flex;align-items:center;gap:3px;height:22px}
+.onda i{width:4px;height:8px;border-radius:2px;background:var(--rojo-t);animation:onda 1s ease-in-out infinite}
+.onda i:nth-child(2){animation-delay:.15s}.onda i:nth-child(3){animation-delay:.3s}.onda i:nth-child(4){animation-delay:.45s}
+@keyframes onda{50%{height:22px}}
+.borrador{text-align:left;font:inherit;cursor:pointer;border-color:var(--oro-claro);gap:4px}
+.enlace-falso{color:var(--enlace);font-weight:600}
+.inicios{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.inicio{font:inherit;font-size:17px;font-weight:600;text-align:left;color:var(--tinta);background:var(--tarjeta);border:1px solid var(--linea);border-radius:var(--r);padding:16px;min-height:60px;cursor:pointer;box-shadow:var(--sombra)}
+.inicio:active{background:var(--hundido)}
+/* buscar: afinar en una sola pantalla */
+.afinar{padding-bottom:200px;gap:14px}
+.h1-busqueda{font-size:30px}
+.entendi{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:15px;color:var(--suave)}
+.entendi .chip-resumen{background:var(--verde-f);border-color:transparent;color:var(--verde-t)}
+.pregunta{display:flex;flex-direction:column;gap:12px;padding:20px 0 4px;border-top:1px solid var(--linea)}
+.pregunta h2{font-size:23px}
+.elecciones{display:flex;flex-wrap:wrap;gap:10px}
+.elecciones.con-ayuda{display:grid;grid-template-columns:1fr}
+.eleccion{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;font:inherit;font-size:18px;font-weight:600;text-align:left;color:var(--tinta);background:var(--tarjeta);border:1px solid var(--linea);border-radius:var(--r);padding:13px 18px;min-height:54px;justify-content:center;cursor:pointer;box-shadow:var(--sombra);transition:border-color .12s,background .12s}
+.elecciones.con-ayuda .eleccion{padding:14px 52px 14px 18px}
+.eleccion-ayuda{font-size:15px;font-weight:400;color:var(--suave)}
+.eleccion[aria-pressed="true"]{background:var(--acento-f);border-color:var(--acento);box-shadow:inset 0 0 0 1px var(--acento)}
+.elecciones:not(.con-ayuda) .eleccion[aria-pressed="true"]{padding-left:40px}
+.eleccion[aria-pressed="true"]::before{content:"";position:absolute;width:20px;height:20px;border-radius:50%;background:var(--acento) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center/13px no-repeat}
+.elecciones:not(.con-ayuda) .eleccion[aria-pressed="true"]::before{left:13px;top:50%;margin-top:-10px}
+.elecciones.con-ayuda .eleccion[aria-pressed="true"]::before{right:16px;top:50%;margin-top:-10px}
+.eleccion:focus-visible{outline:3px solid var(--oro);outline-offset:2px}
+.respuesta-libre{font-size:18px;padding:13px 16px}
+.pie-afinar{position:fixed;left:0;right:0;bottom:0;z-index:5;background:rgba(255,255,255,.92);-webkit-backdrop-filter:saturate(1.6) blur(18px);backdrop-filter:saturate(1.6) blur(18px);border-top:1px solid var(--linea);padding:12px 20px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .pie-afinar{background:rgba(23,27,51,.92)}}
+.pie-afinar>*{width:100%;max-width:520px;margin:0 auto}
+.resumen-texto{font-size:15px;line-height:1.35;color:var(--suave)}
+.resumen-texto b{color:var(--tinta);font-weight:600}
+@media (prefers-reduced-motion: reduce){.onda i{animation:none;height:14px}}
+.sugerencias[hidden]{display:none}
 </style>
 </head>
 <body>

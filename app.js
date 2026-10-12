@@ -1,6 +1,6 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
 import { SUPABASE_URL, SUPABASE_KEY, BOT_TELEGRAM } from "./config.js";
-import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir } from "./categorias.js";
+import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js";
 
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
 const $app = document.getElementById("app");
@@ -363,38 +363,93 @@ function grafica(filas) {
 }
 
 // ---------- buscar algo ----------
-let flujo = null; // {texto, categoria, preguntas, paso, respuestas}
+let flujo = null; // {texto, categoria, preguntas, respuestas, elegidas, para, paraElegido, notas, entendi}
+const BORRADOR = "borrador-busqueda";
 
-function pantallaAgregar() {
-  flujo = null;
+function guardarBorrador() {
+  if (!flujo) return;
+  try {
+    localStorage.setItem(BORRADOR, JSON.stringify({ ...flujo, categoria: undefined, preguntas: undefined, elegidas: [...flujo.elegidas], guardado: Date.now() }));
+  } catch {}
+}
+function leerBorrador() {
+  try {
+    const b = JSON.parse(localStorage.getItem(BORRADOR) || "null");
+    if (!b || Date.now() - b.guardado > 3 * 86400000) return null;
+    return b;
+  } catch { return null; }
+}
+function borrarBorrador() { try { localStorage.removeItem(BORRADOR); } catch {} }
+
+function nuevoFlujo(texto, antes = null) {
+  const f = antes ? { ...antes, texto, elegidas: new Set(antes.elegidas || []) } : { texto, respuestas: {}, elegidas: new Set(), para: "", paraElegido: false, notas: "" };
+  recalcular(f);
+  return f;
+}
+/** Vuelve a leer la frase: categoría, preguntas y lo que ya dijo (sin pisar lo que eligió a mano). */
+function recalcular(f) {
+  f.categoria = esLiga(f.texto) ? { id: "liga", nombre: "Liga" } : detectar(f.texto);
+  f.preguntas = f.categoria.id === "liga" ? [] : preguntasPara(f.categoria, f.texto);
+  const e = f.categoria.id === "liga" ? { respuestas: {}, para: "", etiquetas: [] } : entender(f.texto, f.categoria);
+  for (const k of Object.keys(f.respuestas)) if (!f.elegidas.has(k)) delete f.respuestas[k];
+  for (const [k, v] of Object.entries(e.respuestas)) if (!f.elegidas.has(k)) f.respuestas[k] = v;
+  if (!f.paraElegido) f.para = e.para;
+  f.entendi = e.etiquetas;
+}
+
+// ---------- 1. ¿Qué quieres comprar? ----------
+async function pantallaAgregar(textoInicial = "") {
+  const borrador = !textoInicial && leerBorrador();
   pintar(`
     <main>
       <a class="volver" href="#/hoy">‹ Mi lista</a>
-      <p class="ceja">Buscar algo</p>
       <h1>¿Qué quieres comprar?</h1>
-      <p class="suave">Escríbelo como lo dirías en voz alta. También puedes pegar la liga de una tienda o de un anuncio de auto (Marketplace, Copart…) para que te diga si el precio es bueno.</p>
+      <p class="suave">Escríbelo o díctalo como se lo dirías a alguien. Entre más detalles, menos te pregunto.</p>
+      ${borrador ? `<button class="tarjeta borrador" id="seguir"><span class="suave pequeno">Te quedaste a medias</span><span class="titulo">“${esc(borrador.texto)}”</span><span class="enlace-falso">Continuar donde me quedé</span></button>` : ""}
       <form id="f-que" class="pila">
-        <div class="con-microfono">
-          <textarea id="que" rows="2" required placeholder="Una televisión de 50 pulgadas"></textarea>
-          <button type="button" id="mic" class="microfono" aria-label="Decirlo con la voz" hidden>🎤</button>
+        <div class="campo-voz">
+          <textarea id="que" rows="3" required placeholder="Ej. Una tele de 55 pulgadas para mi papá, que no pase de 8 mil pesos">${esc(textoInicial)}</textarea>
+          <div id="voz" class="voz" hidden></div>
         </div>
+        <button type="button" id="mic" class="boton microfono-boton" hidden>${ICONO_MIC}<span>Dictar con mi voz</span></button>
         <ul id="sugerencias" class="sugerencias" role="listbox" aria-label="Sugerencias" hidden></ul>
         <button class="boton principal" type="submit">Siguiente</button>
       </form>
-      <p class="ceja">Ejemplos</p>
-      <div class="chips">
-        ${["Televisión de 50 pulgadas", "Aspiradora robot que trapee", "Jeans Levi's 501", "Camioneta familiar usada"].map((e) => `<button type="button" class="chip">${e}</button>`).join("")}
+      <h2 class="seccion">O empieza por aquí</h2>
+      <div class="inicios">
+        ${INICIOS.map((c) => `<button type="button" class="inicio" data-t="${esc(c.texto)}">${esc(c.etiqueta)}</button>`).join("")}
       </div>
+      <div id="recientes"></div>
+      <p class="suave pequeno">También puedes pegar la liga de una tienda o de un anuncio de auto (Marketplace, Copart…) y te digo si el precio es bueno.</p>
     </main>${barra("agregar")}`);
   const que = document.getElementById("que");
-  document.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { que.value = c.textContent; que.focus(); }));
-  // Sugerencias mientras escribe: lo que ya vigilamos, sus búsquedas recientes y frases comunes
+  const ir = (texto) => {
+    texto = texto.trim();
+    if (!texto) return;
+    flujo = nuevoFlujo(texto, flujo && flujo.texto !== texto ? flujo : null);
+    guardarBorrador();
+    location.hash = "#/afinar";
+  };
+  if (borrador) document.getElementById("seguir").onclick = () => {
+    flujo = nuevoFlujo(borrador.texto, borrador);
+    location.hash = "#/afinar";
+  };
+  document.querySelectorAll(".inicio").forEach((c) => (c.onclick = () => { flujo = null; ir(c.dataset.t); }));
+  // Sugerencias mientras escribe y búsquedas anteriores para repetirlas
   const lista = document.getElementById("sugerencias");
   let extras = [];
   Promise.all([
     db.from("productos").select("nombre").eq("activo", true),
-    db.from("solicitudes").select("texto").order("creado", { ascending: false }).limit(10),
-  ]).then(([p, s]) => { extras = [...(s.data || []).map((x) => x.texto), ...(p.data || []).map((x) => x.nombre)]; });
+    db.from("solicitudes").select("texto").order("creado", { ascending: false }).limit(12),
+  ]).then(([p, s]) => {
+    const previas = [...new Set((s.data || []).map((x) => x.texto.split(" · ")[0]))];
+    extras = [...previas, ...(p.data || []).map((x) => x.nombre)];
+    const cont = document.getElementById("recientes");
+    if (cont && previas.length) {
+      cont.innerHTML = `<h2 class="seccion">Buscaste antes</h2><div class="chips">${previas.slice(0, 5).map((t) => `<button type="button" class="chip reciente">${esc(t)}</button>`).join("")}</div>`;
+      cont.querySelectorAll(".reciente").forEach((c) => (c.onclick = () => { que.value = c.textContent; que.focus(); que.dispatchEvent(new Event("input")); }));
+    }
+  });
   que.addEventListener("input", () => {
     const ops = esLiga(que.value) ? [] : sugerir(que.value, extras);
     lista.hidden = !ops.length;
@@ -404,116 +459,223 @@ function pantallaAgregar() {
       const html = i >= 0 ? `${esc(o.slice(0, i))}<span class="ya">${esc(o.slice(i, i + t.length))}</span><b>${esc(o.slice(i + t.length))}</b>` : `<b>${esc(o)}</b>`;
       return `<li><button type="button" class="sugerencia" data-v="${esc(o)}">${html}</button></li>`;
     }).join("");
-    lista.querySelectorAll(".sugerencia").forEach((b) => (b.onclick = () => {
-      que.value = b.dataset.v; lista.hidden = true; document.getElementById("f-que").requestSubmit();
-    }));
+    lista.querySelectorAll(".sugerencia").forEach((b) => (b.onclick = () => { que.value = b.dataset.v; lista.hidden = true; ir(que.value); }));
   });
-  activarMicrofono(que);
-  document.getElementById("f-que").onsubmit = (e) => {
-    e.preventDefault();
-    const texto = que.value.trim();
-    if (!texto) return;
-    if (esLiga(texto)) {
-      flujo = { texto, categoria: { id: "liga", nombre: "Liga" }, preguntas: [], paso: 0, respuestas: {} };
-      return pantallaParaQuien();
-    }
-    const categoria = detectar(texto);
-    flujo = { texto, categoria, preguntas: preguntasPara(categoria, texto), paso: 0, respuestas: {} };
-    pantallaPregunta();
-  };
+  activarMicrofono(que, document.getElementById("mic"), document.getElementById("voz"));
+  document.getElementById("f-que").onsubmit = (e) => { e.preventDefault(); detenerVoz(); ir(que.value); };
 }
 
-function activarMicrofono(campo) {
+// ---------- dictado por voz: un toque empieza, otro toque termina ----------
+const ICONO_MIC = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+let detenerVoz = () => {};
+
+function activarMicrofono(campo, boton, panel) {
   const Reco = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const boton = document.getElementById("mic");
-  if (!Reco || !boton) return;
+  if (!boton) return;
   boton.hidden = false;
+  if (!Reco) {
+    boton.onclick = () => aviso("Este teléfono no deja dictar aquí. Toca el micrófono de tu teclado para dictar.");
+    return;
+  }
+  const android = /android/i.test(navigator.userAgent);
+  let activo = false, reco = null, previo = "", confirmado = "", inicio = 0, reloj = null, limite = null;
+
+  const pintarPanel = (provisional = "") => {
+    const seg = Math.floor((Date.now() - inicio) / 1000);
+    panel.innerHTML = `<span class="onda" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="voz-texto">${provisional ? `<span class="suave">${esc(provisional)}</span>` : "Te escucho… habla con calma."}</span>
+      <span class="voz-tiempo">${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}</span>`;
+  };
+  const escribir = (provisional = "") => {
+    campo.value = limpiarDictado([previo, confirmado, provisional].filter(Boolean).join(" "));
+    pintarPanel(provisional);
+  };
+  const escuchar = () => {
+    reco = new Reco();
+    reco.lang = "es-MX";
+    reco.interimResults = true;
+    reco.maxAlternatives = 1;
+    // En Android el modo continuo repite palabras; ahí escuchamos por frases y volvemos a empezar solos.
+    reco.continuous = !android;
+    reco.onresult = (e) => {
+      let provisional = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript.trim();
+        if (e.results[i].isFinal) confirmado = [confirmado, t].filter(Boolean).join(" ");
+        else provisional += " " + t;
+      }
+      escribir(provisional.trim());
+    };
+    reco.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        terminar();
+        aviso("Necesito permiso para usar el micrófono. Revisa los permisos del navegador o usa el micrófono del teclado.", "error");
+      } else if (e.error === "network") {
+        terminar();
+        aviso("El dictado necesita internet. Revisa tu conexión o usa el micrófono del teclado.", "error");
+      }
+      // "no-speech" y "aborted": no pasa nada, se vuelve a escuchar solo
+    };
+    reco.onend = () => { if (activo) setTimeout(() => { if (activo) try { escuchar(); } catch { terminar(); } }, 120); };
+    try { reco.start(); } catch { /* ya estaba escuchando */ }
+  };
+  const terminar = () => {
+    if (!activo) return;
+    activo = false;
+    clearInterval(reloj); clearTimeout(limite);
+    try { reco && reco.stop(); } catch {}
+    campo.value = limpiarDictado(campo.value);
+    panel.hidden = true;
+    boton.classList.remove("escuchando");
+    boton.innerHTML = `${ICONO_MIC}<span>Dictar con mi voz</span>`;
+    boton.setAttribute("aria-pressed", "false");
+    campo.dispatchEvent(new Event("input"));
+    if (navigator.vibrate) navigator.vibrate(15);
+  };
+  detenerVoz = terminar;
   boton.onclick = () => {
-    const r = new Reco();
-    r.lang = "es-MX";
-    r.interimResults = false;
+    if (activo) return terminar();
+    activo = true;
+    previo = campo.value.trim(); confirmado = ""; inicio = Date.now();
     boton.classList.add("escuchando");
-    r.onresult = (e) => { campo.value = e.results[0][0].transcript; };
-    r.onend = () => boton.classList.remove("escuchando");
-    r.onerror = () => { boton.classList.remove("escuchando"); aviso("No te escuché. Intenta otra vez o escríbelo."); };
-    r.start();
+    boton.innerHTML = `<span class="cuadro" aria-hidden="true"></span><span>Ya terminé</span>`;
+    boton.setAttribute("aria-pressed", "true");
+    panel.hidden = false;
+    pintarPanel();
+    reloj = setInterval(() => pintarPanel(panel.querySelector(".voz-texto .suave")?.textContent || ""), 1000);
+    limite = setTimeout(() => { terminar(); aviso("Paré de escuchar después de 2 minutos. Revisa el texto."); }, 120000);
+    if (navigator.vibrate) navigator.vibrate(15);
+    escuchar();
   };
+  window.addEventListener("hashchange", terminar, { once: true });
 }
 
-function pantallaPregunta() {
-  const { preguntas, paso } = flujo;
-  if (paso >= preguntas.length) return pantallaParaQuien();
-  const q = preguntas[paso];
-  const puntos = preguntas.map((_, i) => `<span class="${i <= paso ? "lleno" : ""}"></span>`).join("");
-  pintar(`
-    <main>
-      <button class="volver" id="atras">‹ Atrás</button>
-      <p class="ceja">${esc(flujo.categoria.nombre !== "Otro" ? flujo.categoria.nombre : "“" + flujo.texto + "”")}</p>
-      <div class="puntos" aria-label="Pregunta ${paso + 1} de ${preguntas.length}">${puntos}</div>
-      <h1>${esc(q.texto)}</h1>
-      <div class="opciones">
-        ${q.opciones.map((o) => `<button class="opcion" data-v="${esc(o.valor)}"><span>${esc(o.etiqueta)}</span>${o.ayuda ? `<span class="suave">${esc(o.ayuda)}</span>` : ""}</button>`).join("")}
-      </div>
-      ${q.tipo === "texto" ? `
-      <form id="f-texto" class="pila">
-        ${q.opciones.length ? `<label for="respuesta">O escríbelo</label>` : ""}
-        <input id="respuesta" autocomplete="off" placeholder="${esc(q.placeholder || "")}" value="${esc(flujo.respuestas[q.clave] && !q.opciones.some((o) => o.valor === flujo.respuestas[q.clave]) ? flujo.respuestas[q.clave] : "")}">
-        <button class="boton principal" type="submit">Siguiente</button>
-      </form>` : ""}
-    </main>`);
-  const formTexto = document.getElementById("f-texto");
-  if (formTexto) formTexto.onsubmit = (e) => {
-    e.preventDefault();
-    const valor = document.getElementById("respuesta").value.trim();
-    if (!valor) return aviso(q.opciones.length ? "Escribe algo o toca una de las opciones." : "Escribe tu respuesta para seguir.");
-    flujo.respuestas[q.clave] = valor;
-    flujo.paso++;
-    pantallaPregunta();
-  };
-  document.getElementById("atras").onclick = () => {
-    if (flujo.paso === 0) return pantallaAgregar();
-    flujo.paso--; pantallaPregunta();
-  };
-  document.querySelectorAll(".opcion").forEach((b) => (b.onclick = () => {
-    flujo.respuestas[q.clave] = b.dataset.v;
-    flujo.paso++;
-    pantallaPregunta();
-  }));
-}
+// ---------- 2. Afinar: todas las preguntas en una sola pantalla ----------
+async function pantallaAfinar() {
+  if (!flujo) {
+    const b = leerBorrador();
+    if (!b) return pantallaAgregar();
+    flujo = nuevoFlujo(b.texto, b);
+  }
+  const f = flujo;
+  const liga = f.categoria.id === "liga";
+  const elegido = (q, o) => f.respuestas[q.clave] === o.valor;
+  const libre = (q) => f.respuestas[q.clave] && !q.opciones.some((o) => o.valor === f.respuestas[q.clave]) ? f.respuestas[q.clave] : "";
+  const preguntas = f.preguntas.map((q) => `
+    <section class="pregunta" data-q="${esc(q.clave)}">
+      <h2>${esc(q.texto)}</h2>
+      ${q.opciones.length ? `<div class="elecciones ${q.opciones.some((o) => o.ayuda) ? "con-ayuda" : ""}">
+        ${q.opciones.map((o) => `<button type="button" class="eleccion" aria-pressed="${elegido(q, o)}" data-q="${esc(q.clave)}" data-v="${esc(o.valor)}">
+          <span class="eleccion-nombre">${esc(o.etiqueta)}</span>${o.ayuda ? `<span class="eleccion-ayuda">${esc(o.ayuda)}</span>` : ""}</button>`).join("")}
+      </div>` : ""}
+      ${q.tipo === "texto" ? `<input class="respuesta-libre" data-q="${esc(q.clave)}" autocomplete="off" value="${esc(libre(q))}" placeholder="${esc(q.placeholder || "Escríbelo aquí")}" aria-label="${esc(q.texto)}">` : ""}
+    </section>`).join("");
 
-function pantallaParaQuien() {
   pintar(`
-    <main>
-      <button class="volver" id="atras">‹ Atrás</button>
-      <p class="ceja">Último paso</p>
-      <h1>¿Para quién es?</h1>
-      <form id="f-quien" class="pila">
-        <div class="opciones">
-          <button type="button" class="opcion" data-v="">Para mí</button>
+    <main class="afinar">
+      <a class="volver" href="#/agregar" id="cambiar">‹ Cambiar lo que busco</a>
+      <p class="ceja">${esc(liga ? "Revisar un precio" : f.categoria.id === "otro" ? "Tu búsqueda" : f.categoria.nombre)}</p>
+      <h1 class="h1-busqueda">“${esc(f.texto)}”</h1>
+      ${f.entendi?.length ? `<div class="entendi"><span>Ya entendí:</span>${f.entendi.map((t) => `<span class="chip-resumen">${esc(t)}</span>`).join("")}</div>` : ""}
+      ${preguntas.trim() ? `<p class="suave">Toca lo que aplique. Puedes cambiar cualquier respuesta antes de buscar; lo que dejes sin elegir lo decido yo.</p>` : ""}
+      ${preguntas}
+      <section class="pregunta">
+        <h2>¿Para quién es?</h2>
+        <div class="elecciones" id="personas">
+          <button type="button" class="eleccion persona" aria-pressed="${!f.para}" data-p=""><span class="eleccion-nombre">Para mí</span></button>
         </div>
-        <label for="quien">O escribe para quién</label>
-        <input id="quien" placeholder="Mi papá, mi nieta…" autocomplete="off">
-        <button class="boton principal" type="submit">Buscar opciones</button>
-      </form>
-    </main>`);
-  document.getElementById("atras").onclick = () => {
-    if (!flujo.preguntas.length) return pantallaAgregar();
-    flujo.paso = flujo.preguntas.length - 1; pantallaPregunta();
+        <input id="para" class="respuesta-libre" autocomplete="off" placeholder="O escribe para quién: mi papá, mi nieta…" value="">
+      </section>
+      <section class="pregunta">
+        <h2>¿Algo más que deba saber?</h2>
+        <textarea id="notas" rows="2" placeholder="Opcional. Ej. que sea fácil de usar, que sea color negro, que llegue antes de Navidad">${esc(f.notas || "")}</textarea>
+      </section>
+    </main>
+    <div class="pie-afinar">
+      <p id="resumen" class="resumen-texto"></p>
+      <button class="boton principal" id="buscar">Buscar mis opciones</button>
+    </div>`);
+
+  // Personas a las que ya les ha buscado, para elegirlas con un toque
+  const personas = document.getElementById("personas");
+  const pintarPersonas = (nombres) => {
+    personas.querySelectorAll(".persona:not([data-p=''])").forEach((b) => b.remove());
+    if (f.para && !nombres.includes(f.para)) nombres = [...nombres, f.para];
+    for (const n of nombres) personas.insertAdjacentHTML("beforeend", `<button type="button" class="eleccion persona" aria-pressed="${f.para === n}" data-p="${esc(n)}"><span class="eleccion-nombre">${esc(n)}</span></button>`);
+    personas.querySelectorAll(".persona").forEach((b) => (b.onclick = () => {
+      f.para = b.dataset.p; f.paraElegido = true;
+      document.getElementById("para").value = "";
+      actualizar();
+    }));
   };
-  const enviar = async (para) => {
+  const fijas = ["Mi papá", "Mi mamá"];
+  pintarPersonas(fijas);
+  Promise.all([
+    db.from("solicitudes").select("para").order("creado", { ascending: false }).limit(30),
+    db.from("seguimientos").select("para").eq("activo", true),
+  ]).then(([a, b]) => {
+    const nombres = [...new Set([...(a.data || []), ...(b.data || [])].map((x) => x.para).filter(Boolean))];
+    // "para mi papá" en la frase → la persona que ya tiene guardada como "Papá (Juan de Dios)"
+    const clave = (t) => quitarAcentos(t.toLowerCase()).replace(/^mi /, "").split(/\W+/)[0];
+    if (f.para && !f.paraElegido) f.para = nombres.find((n) => clave(n) === clave(f.para)) || f.para;
+    const sinRepetir = fijas.filter((x) => !nombres.some((n) => clave(n) === clave(x)));
+    pintarPersonas([...nombres, ...sinRepetir].slice(0, 6));
+    actualizar();
+  });
+
+  const resumen = document.getElementById("resumen");
+  function actualizar() {
+    document.querySelectorAll(".eleccion[data-q]").forEach((b) => b.setAttribute("aria-pressed", String(f.respuestas[b.dataset.q] === b.dataset.v)));
+    document.querySelectorAll(".persona").forEach((b) => b.setAttribute("aria-pressed", String((f.para || "") === b.dataset.p)));
+    const partes = [];
+    for (const q of f.preguntas) {
+      const v = f.respuestas[q.clave];
+      if (!v) continue;
+      const texto = q.opciones.find((o) => o.valor === v)?.etiqueta || v;
+      partes.push(q.clave === "presupuesto" && !q.opciones.some((o) => o.valor === v) ? `hasta ${texto}` : texto);
+    }
+    const faltan = f.preguntas.filter((q) => !f.respuestas[q.clave]).length;
+    partes.push(f.para ? `para ${f.para.replace(/^Mi /, "tu ")}` : "para ti");
+    resumen.innerHTML = `<b>${esc(partes.join(", "))}</b>${faltan ? `<span> · ${faltan === 1 ? "1 pregunta la decido yo" : `${faltan} preguntas las decido yo`}</span>` : ""}`;
+    guardarBorrador();
+  }
+
+  document.querySelectorAll(".eleccion[data-q]").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.q;
+    if (f.respuestas[k] === b.dataset.v) { delete f.respuestas[k]; f.elegidas.delete(k); }
+    else { f.respuestas[k] = b.dataset.v; f.elegidas.add(k); }
+    const libreInput = document.querySelector(`.respuesta-libre[data-q="${k}"]`);
+    if (libreInput) libreInput.value = "";
+    if (navigator.vibrate) navigator.vibrate(8);
+    actualizar();
+  }));
+  document.querySelectorAll(".respuesta-libre[data-q]").forEach((i) => (i.oninput = () => {
+    const v = i.value.trim();
+    if (v) { f.respuestas[i.dataset.q] = v; f.elegidas.add(i.dataset.q); } else { delete f.respuestas[i.dataset.q]; f.elegidas.delete(i.dataset.q); }
+    actualizar();
+  }));
+  document.getElementById("para").oninput = (e) => { f.para = e.target.value.trim(); f.paraElegido = true; actualizar(); };
+  document.getElementById("notas").oninput = (e) => { f.notas = e.target.value; guardarBorrador(); };
+  document.getElementById("cambiar").onclick = (e) => { e.preventDefault(); pantallaAgregar(f.texto); history.replaceState(null, "", "#/agregar"); };
+  actualizar();
+
+  const buscar = document.getElementById("buscar");
+  buscar.onclick = async () => {
+    buscar.disabled = true; buscar.textContent = "Mandando…";
+    const respuestas = { ...f.respuestas };
+    if (f.notas?.trim()) respuestas.notas = f.notas.trim();
     const fila = {
-      texto: flujo.texto,
-      categoria: flujo.categoria.id,
-      respuestas: flujo.respuestas,
-      para: para || null,
-      lado: flujo.respuestas.lado || { tj: "mx", bc: "mx", sd: "us" }[flujo.respuestas.zona] || "ambos",
+      texto: f.texto,
+      categoria: f.categoria.id,
+      respuestas,
+      para: f.para || null,
+      lado: respuestas.lado || { tj: "mx", bc: "mx", sd: "us" }[respuestas.zona] || "ambos",
     };
     const { data, error } = await db.from("solicitudes").insert(fila).select("id").single();
-    if (error) return aviso("No se pudo guardar. Revisa tu internet.", "error");
+    if (error) { buscar.disabled = false; buscar.textContent = "Buscar mis opciones"; return aviso("No se pudo mandar. Revisa tu internet.", "error"); }
+    borrarBorrador(); flujo = null;
     location.hash = `#/solicitud/${data.id}`;
   };
-  document.querySelector('.opcion[data-v=""]').onclick = () => enviar(null);
-  document.getElementById("f-quien").onsubmit = (e) => { e.preventDefault(); enviar(document.getElementById("quien").value.trim()); };
 }
 
 // ---------- opciones de una búsqueda ----------
@@ -756,7 +918,8 @@ async function enrutar() {
   if (!usuario) return pantallaEntrar();
   const [, ruta, id] = (location.hash || "#/hoy").split("/");
   if (ruta === "producto" && id) return pantallaProducto(id);
-  if (ruta === "agregar") return pantallaAgregar();
+  if (ruta === "agregar") return pantallaAgregar(flujo?.texto || "");
+  if (ruta === "afinar") return pantallaAfinar();
   if (ruta === "solicitud" && id) return pantallaSolicitud(id);
   if (ruta === "ajustes") return pantallaAjustes();
   return pantallaHoy();
