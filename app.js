@@ -57,12 +57,25 @@ function pintar(html) {
   const h = $app.querySelector("h1");
   if (h) h.setAttribute("tabindex", "-1"), h.focus({ preventScroll: true });
 }
+const ICONOS = {
+  lista: `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+  buscar: `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`,
+  ajustes: `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 20c1-3.6 3.8-5.5 7-5.5s6 1.9 7 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+};
 const barra = (activa) => `
   <nav class="barra" aria-label="Secciones">
-    <a href="#/hoy" class="${activa === "hoy" ? "activa" : ""}"><span aria-hidden="true">◉</span>Mi lista</a>
-    <a href="#/agregar" class="grande"><span aria-hidden="true">＋</span>Buscar algo</a>
-    <a href="#/ajustes" class="${activa === "ajustes" ? "activa" : ""}"><span aria-hidden="true">⚙</span>Ajustes</a>
+    <a href="#/hoy" class="${activa === "hoy" ? "activa" : ""}">${ICONOS.lista}Mi lista</a>
+    <a href="#/agregar" class="grande">${ICONOS.buscar}Buscar algo</a>
+    <a href="#/ajustes" class="${activa === "ajustes" ? "activa" : ""}">${ICONOS.ajustes}Ajustes</a>
   </nav>`;
+
+/** Tamaño de letra (se guarda en este teléfono). */
+function leerLetra() { try { return localStorage.getItem("letra") || "normal"; } catch { return "normal"; } }
+function ponerLetra(v) {
+  document.documentElement.dataset.letra = v;
+  try { localStorage.setItem("letra", v); } catch {}
+}
+document.documentElement.dataset.letra = leerLetra();
 
 // ---------- entrar ----------
 function pantallaEntrar(correo = "") {
@@ -116,65 +129,138 @@ function pantallaCodigo(correo) {
   };
 }
 
+// ---------- piezas comunes ----------
+const ICONO_BOLSA = `<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M6 8h12l-1 11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 8V7a3 3 0 0 1 6 0v1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+const foto = (src, clase = "miniatura") => src
+  ? `<img class="${clase}" src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=&quot;${clase} vacia&quot;>${ICONO_BOLSA.replace(/"/g, "&quot;")}</span>'">`
+  : `<span class="${clase} vacia">${ICONO_BOLSA}</span>`;
+const esqueleto = (titulo, n = 3) => `<main><p class="ceja">${esc(titulo)}</p><div class="esqueleto titulo-esq"></div>${"<div class='esqueleto tarjeta-esq'></div>".repeat(n)}</main>`;
+
+/** Compartir por WhatsApp (o el menú del teléfono) con foto/precio/liga. */
+function compartirBoton(texto, url) {
+  return `<button class="boton chico compartir" data-texto="${esc(texto)}" data-url="${esc(url || "")}">Mandar a la familia</button>`;
+}
+function activarCompartir() {
+  document.querySelectorAll(".compartir").forEach((b) => (b.onclick = async () => {
+    const texto = b.dataset.texto, url = b.dataset.url;
+    if (navigator.share) { try { await navigator.share({ title: "Cazador de Ofertas", text: texto, url: url || undefined }); return; } catch (e) { if (e.name === "AbortError") return; } }
+    window.open(`https://wa.me/?text=${encodeURIComponent(url ? `${texto}\n${url}` : texto)}`, "_blank");
+  }));
+}
+
+/** Franquicia de residentes de la frontera al cruzar por tierra: US$150 por persona al día (artículos personales). */
+function notaFranquicia(o) {
+  if ((o.moneda || "").toUpperCase() !== "USD" || o.precio_hoy == null) return "";
+  return o.precio_hoy <= 150
+    ? `<p class="franquicia ok">Si lo cruzas por la garita, cabe en tu franquicia de US$150 por persona al día.</p>`
+    : `<p class="franquicia">Pasa de la franquicia de US$150 por persona al día: al cruzarlo hay que declararlo y pagar impuestos.</p>`;
+}
+
+/** Temporadas de ofertas 2026 (fechas fijas del calendario comercial). */
+const TEMPORADAS = [
+  { nombre: "Buen Fin", inicio: "2026-11-13", fin: "2026-11-17" },
+  { nombre: "Black Friday", inicio: "2026-11-27", fin: "2026-11-27" },
+  { nombre: "Cyber Monday", inicio: "2026-11-30", fin: "2026-11-30" },
+];
+function proximaTemporada() {
+  const hoy = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Tijuana" })); hoy.setHours(0, 0, 0, 0);
+  for (const t of TEMPORADAS) {
+    const ini = new Date(t.inicio + "T00:00:00"), fin = new Date(t.fin + "T23:59:00");
+    if (hoy <= fin) {
+      const dias = Math.round((ini - hoy) / 86400000);
+      return { ...t, dias, enCurso: dias <= 0 };
+    }
+  }
+  return null;
+}
+
 // ---------- mi lista ----------
 async function pantallaHoy() {
-  pintar(`<main><p class="ceja">Mi lista</p><h1>Cargando…</h1></main>${barra("hoy")}`);
-  const [segs, sols] = await Promise.all([
+  pintar(esqueleto("Mi lista") + barra("hoy"));
+  const desde = new Date(Date.now() - 90 * 86400000).toISOString();
+  const [segs, sols, perfil] = await Promise.all([
     db.from("seguimientos")
       .select("id,para,precio_objetivo,precio_justo_max,no_comprar,fecha_limite,lado,producto_id,productos(nombre,moneda_referencia,imagen,ligas),veredictos(*)")
       .eq("activo", true).order("creado"),
     db.from("solicitudes").select("id,texto,estado,actualizado,creado")
       .in("estado", ["pendiente", "buscando", "lista", "sin_resultado"]).order("creado", { ascending: false }),
+    db.from("perfiles").select("nombre").eq("id", usuario.id).single(),
   ]);
-  if (segs.error) return pintar(`<main><h1>No se pudo cargar</h1><p class="suave">Revisa tu internet y vuelve a abrir.</p></main>${barra("hoy")}`);
+  if (segs.error) return pintar(`<main><h1>No se pudo cargar</h1><p class="suave">Revisa tu internet y vuelve a abrir.</p><button class="boton principal" onclick="location.reload()">Intentar otra vez</button></main>${barra("hoy")}`);
   const lista = segs.data.map((s) => ({ ...s, v: Array.isArray(s.veredictos) ? s.veredictos[0] : s.veredictos }));
+  // Precio más bajo de los últimos 90 días de cada producto
+  const ids = [...new Set(lista.map((s) => s.producto_id))];
+  const minimos = {};
+  if (ids.length) {
+    const { data: ps } = await db.from("precios").select("producto_id,precio_mxn").in("producto_id", ids).gte("fecha", desde);
+    for (const r of ps || []) if (r.precio_mxn != null) minimos[r.producto_id] = Math.min(minimos[r.producto_id] ?? Infinity, Number(r.precio_mxn));
+  }
   const orden = { "Comprar ya": 0, "Precio justo": 1, "Vigilando": 2, "Sin datos": 3, "No comprar": 4 };
   lista.sort((a, b) => (orden[a.v?.veredicto] ?? 3) - (orden[b.v?.veredicto] ?? 3));
-  const oferta = lista.find((s) => s.v?.veredicto === "Comprar ya" && s.v.mejor_url);
+  const ofertas = lista.filter((s) => s.v?.veredicto === "Comprar ya" && s.v.mejor_url);
+  const oferta = ofertas[0];
+  const nombre = (perfil.data?.nombre || "").split(/[.\s]/)[0];
+  const saludo = nombre ? `Hola, ${esc(nombre.charAt(0).toUpperCase() + nombre.slice(1))}` : "Hola";
+  const listas = (sols.data || []).filter((s) => s.estado === "lista").length;
 
   const heroe = oferta ? `
-    <section class="heroe">
-      <p class="ceja">Hoy sí conviene</p>
-      <h2>${esc(oferta.productos?.nombre || "")}</h2>
+    <a class="heroe" href="#/producto/${oferta.id}">
+      <div class="heroe-fila">${foto(oferta.productos?.imagen, "miniatura grande")}
+        <div><p class="ceja">Hoy sí conviene comprar</p><h2>${esc(oferta.productos?.nombre || "")}</h2></div></div>
       <p class="precio">${precio(oferta.v.mejor_precio, oferta.v.mejor_moneda)}</p>
       <p>en ${esc(oferta.v.mejor_tienda)}${oferta.v.mejor_moneda === "USD" ? ` · ≈ ${pesos(oferta.v.mejor_precio_mxn)}` : ""}</p>
-      <a class="boton claro" href="#/producto/${oferta.id}">Ver detalles</a>
-    </section>` : "";
+      <span class="boton claro">Ver detalles</span>
+    </a>` : "";
+
+  const t = proximaTemporada();
+  const temporada = t ? `<div class="aviso-temporada">${t.enCurso ? `<b>Hoy es ${esc(t.nombre)}.</b> Revisamos tus precios más seguido.` : `<b>${esc(t.nombre)}</b> en ${t.dias} ${t.dias === 1 ? "día" : "días"}. Ahí suelen bajar los precios: no compres caro antes.`}</div>` : "";
 
   const solicitudes = (sols.data || []).map((s) => {
     const lista = s.estado === "lista";
     const sin = s.estado === "sin_resultado";
-    return `<a class="tarjeta solicitud ${lista ? "lista" : ""}" href="#/solicitud/${s.id}">
-      <span class="ceja">${lista ? "¡Ya están tus opciones!" : sin ? "No encontré algo bueno" : "Buscando opciones…"}</span>
+    return `<a class="tarjeta solicitud ${lista ? "lista" : sin ? "" : "buscando"}" href="#/solicitud/${s.id}">
+      <span class="ceja">${lista ? "¡Ya están tus opciones!" : sin ? "No encontré algo bueno" : `<span class="punto"></span>Buscando opciones…`}</span>
       <span class="titulo">“${esc(s.texto)}”</span>
-      <span class="suave">${lista ? "Toca para elegir una." : sin ? "Toca para ver por qué." : `${cuandoLlega(s.creado)}. Te aviso por Telegram.`}</span>
+      <span class="suave">${lista ? "Toca para elegir." : sin ? "Toca para ver por qué." : `${cuandoLlega(s.creado)}. Te aviso por Telegram.`}</span>
     </a>`;
   }).join("");
 
   const tarjetas = lista.map((s) => {
     const faltan = diasPara(s.fecha_limite);
-    return `<a class="tarjeta producto ${s.productos?.imagen ? "con-foto" : ""}" href="#/producto/${s.id}">
-      ${s.productos?.imagen ? `<img class="miniatura" src="${esc(s.productos.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}
-      <span class="cabeza"><span class="titulo">${esc(s.productos?.nombre || "Producto")}</span>${insignia(s.v?.veredicto)}</span>
-      <span class="precio-linea">${s.v?.mejor_precio != null ? `${precio(s.v.mejor_precio, s.v.mejor_moneda, s.v.mejor_precio_mxn)} <span class="suave">en ${esc(s.v.mejor_tienda)}</span>` : `<span class="suave">Todavía sin precio</span>`}</span>
-      <span class="suave pequeno">${s.para ? `Para ${esc(s.para)}` : ""}${s.para && faltan != null ? " · " : ""}${faltan != null && faltan >= 0 ? `faltan ${faltan} días` : ""}</span>
+    const min = minimos[s.producto_id];
+    return `<a class="tarjeta producto" href="#/producto/${s.id}">
+      ${foto(s.productos?.imagen)}
+      <span class="producto-info">
+        <span class="titulo dos-lineas">${esc(s.productos?.nombre || "Producto")}</span>
+        <span class="precio-linea">${s.v?.mejor_precio != null ? precio(s.v.mejor_precio, s.v.mejor_moneda) : `<span class="suave">Todavía sin precio</span>`}</span>
+        ${insignia(s.v?.veredicto)}
+        <span class="suave pequeno">${s.v?.mejor_tienda ? esc(s.v.mejor_tienda) : ""}${min && min !== Infinity ? ` · más bajo en 90 días: ${pesos(min)}` : ""}</span>
+        ${s.para || (faltan != null && faltan >= 0) ? `<span class="suave pequeno">${s.para ? `Para ${esc(s.para)}` : ""}${s.para && faltan != null && faltan >= 0 ? " · " : ""}${faltan != null && faltan >= 0 ? `faltan ${faltan} días` : ""}</span>` : ""}
+      </span>
     </a>`;
   }).join("");
+
+  const chips = [ofertas.length ? `<span class="chip-resumen verde">${ofertas.length} para comprar</span>` : "",
+    listas ? `<span class="chip-resumen azul">${listas} con opciones nuevas</span>` : "",
+    lista.length ? `<span class="chip-resumen">${lista.length} vigilando</span>` : ""].join("");
 
   pintar(`
     <main>
       <p class="ceja">Mi lista</p>
-      <h1>${oferta ? "Hay algo que conviene" : lista.length ? "Todo bajo control" : "Empecemos"}</h1>
+      <h1>${saludo}</h1>
+      ${chips ? `<div class="resumen">${chips}</div>` : ""}
+      ${temporada}
       ${heroe}
       ${solicitudes}
-      ${tarjetas || (!solicitudes ? `<section class="vacio"><p>Todavía no vigilas nada.</p><p class="suave">Toca <b>Buscar algo</b> y escribe lo que quieres comprar, como lo dirías en voz alta.</p><a class="boton principal" href="#/agregar">Buscar algo</a></section>` : "")}
-      <p class="suave pequeno centro">Revisamos los precios solos, varias veces al día.</p>
+      ${tarjetas ? `<h2 class="seccion">Lo que vigilo</h2>${tarjetas}` : ""}
+      ${!tarjetas && !solicitudes ? `<section class="vacio">${ICONO_BOLSA}<p><b>Todavía no vigilas nada.</b></p><p class="suave">Toca <b>Buscar algo</b> y escribe lo que quieres comprar, como lo dirías en voz alta.</p><a class="boton principal" href="#/agregar">Buscar algo</a></section>` : ""}
+      <p class="suave pequeno centro">Revisamos los precios solos todos los días.</p>
     </main>${barra("hoy")}`);
 }
 
 // ---------- detalle ----------
 async function pantallaProducto(id) {
-  pintar(`<main><a class="volver" href="#/hoy">‹ Mi lista</a><h1>Cargando…</h1></main>`);
+  pintar(`<main><a class="volver" href="#/hoy">‹ Mi lista</a><div class="esqueleto foto-esq"></div><div class="esqueleto tarjeta-esq"></div></main>`);
   const { data: s, error } = await db.from("seguimientos")
     .select("*,productos(*),veredictos(*)").eq("id", id).single();
   if (error || !s) return pintar(`<main><a class="volver" href="#/hoy">‹ Mi lista</a><h1>No encontré este producto</h1></main>`);
@@ -192,23 +278,35 @@ async function pantallaProducto(id) {
       <span class="num">${t.error ? `<span class="suave pequeno">${esc(t.error)}</span>` : precio(t.precio, t.moneda, t.real_mxn)}</span>
     </li>`;
   }).join("");
+  const liga = v?.mejor_url || (p.ligas || [])[0];
+  const textoCompartir = `${p.nombre}${v?.mejor_precio != null ? ` — ${v.mejor_moneda === "USD" ? dolares(v.mejor_precio) : pesos(v.mejor_precio)} en ${v.mejor_tienda}` : ""}`;
 
   pintar(`
     <main>
       <a class="volver" href="#/hoy">‹ Mi lista</a>
-      <p class="ceja">${s.para ? `Para ${esc(s.para)}` : "Vigilando"}</p>
-      <h1>${esc(p.nombre)}</h1>
       ${p.imagen ? `<img class="foto-detalle" src="${esc(p.imagen)}" alt="${esc(p.nombre)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}
+      <p class="ceja">${s.para ? `Para ${esc(s.para)}` : "Vigilando"}</p>
+      <h1 class="h1-producto">${esc(p.nombre)}</h1>
       <section class="tarjeta">
         <span class="cabeza"><span class="titulo">Hoy</span>${insignia(v?.veredicto)}</span>
         <p class="precio-grande">${v?.mejor_precio != null ? precio(v.mejor_precio, v.mejor_moneda, v.mejor_precio_mxn) : "Sin precio"}</p>
-        <p class="suave">${esc(v?.razon || "Todavía no revisamos este producto. La siguiente revisión es en unas horas.")}</p>
-        ${v?.mejor_url ? `<a class="boton principal" href="${esc(v.mejor_url)}" target="_blank" rel="noopener">Ir a ${esc(v.mejor_tienda)} ↗</a>`
-          : (p.ligas || [])[0] ? `<a class="boton" href="${esc(p.ligas[0])}" target="_blank" rel="noopener">Ver el producto en la tienda ↗</a>` : ""}
+        <p class="suave">${esc(v?.razon || "Todavía no revisamos este producto. La siguiente revisión es esta madrugada.")}</p>
+        ${v?.mejor_moneda === "USD" ? notaFranquicia({ moneda: "USD", precio_hoy: v.mejor_precio }) : ""}
+        ${liga ? `<a class="boton principal" href="${esc(liga)}" target="_blank" rel="noopener">${v?.mejor_tienda ? `Ir a ${esc(v.mejor_tienda)}` : "Ver en la tienda"} ↗</a>` : ""}
+        ${compartirBoton(textoCompartir, liga)}
+      </section>
+      <section class="tarjeta pila">
+        <span class="titulo">Avísame si baja a…</span>
+        <p class="suave">Te mando un Telegram cuando llegue a este precio o menos.</p>
+        <form id="f-meta" class="fila-meta">
+          <span class="moneda">${usd ? "US$" : "$"}</span>
+          <input id="meta" inputmode="decimal" value="${s.precio_objetivo ?? ""}" aria-label="Precio meta">
+          <button class="boton principal" type="submit">Guardar</button>
+        </form>
       </section>
       ${grafica(hist || [])}
       <section class="tarjeta">
-        <span class="titulo">Precios que buscamos</span>
+        <span class="titulo">Cómo leemos el precio</span>
         <ul class="umbrales">
           <li><span>${insignia("Comprar ya")}</span><span>${umbral(s.precio_objetivo)} o menos</span></li>
           <li><span>${insignia("Precio justo")}</span><span>hasta ${umbral(s.precio_justo_max)}</span></li>
@@ -217,7 +315,19 @@ async function pantallaProducto(id) {
       </section>
       ${tiendas ? `<section class="tarjeta"><span class="titulo">Tiendas</span><ul class="tiendas">${tiendas}</ul></section>` : ""}
       <button class="boton" id="dejar">Ya no vigilar este producto</button>
-    </main>`);
+    </main>${barra("")}`);
+  activarCompartir();
+  document.getElementById("f-meta").onsubmit = async (e) => {
+    e.preventDefault();
+    const valor = Number(String(document.getElementById("meta").value).replace(/[^0-9.]/g, ""));
+    if (!valor) return aviso("Escribe un precio, por ejemplo 300.");
+    const cambios = { precio_objetivo: valor };
+    if (s.precio_justo_max != null && s.precio_justo_max < valor) cambios.precio_justo_max = valor;
+    const { error } = await db.from("seguimientos").update(cambios).eq("id", s.id);
+    if (error) return aviso("No se pudo guardar.", "error");
+    aviso(`Listo: te aviso cuando baje a ${usd ? dolares(valor) : pesos(valor)} o menos.`);
+    pantallaProducto(id);
+  };
   document.getElementById("dejar").onclick = async () => {
     if (!confirm("¿Dejar de vigilar este producto?")) return;
     const { error } = await db.from("seguimientos").update({ activo: false }).eq("id", s.id);
@@ -411,7 +521,7 @@ async function pantallaSolicitud(id) {
       <main>
         <a class="volver" href="#/hoy">‹ Mi lista</a>
         <p class="ceja">Buscando</p>
-        <h1>Listo, ya estoy buscando las 3 mejores opciones</h1>
+        <h1>Listo, ya estoy buscando tus mejores opciones</h1>
         <section class="tarjeta">
           <span class="titulo">“${esc(s.texto)}”</span>
           <p class="suave">Reviso modelos, precios en México y Estados Unidos, y si el descuento es real. ${cuandoLlega(s.creado)}; te aviso por Telegram. Puedes cerrar la app.</p>
@@ -436,8 +546,13 @@ async function pantallaSolicitud(id) {
       <p class="precio-grande">${o.precio_hoy != null ? precio(o.precio_hoy, o.moneda, o.precio_mxn) : "Sin precio hoy"}</p>
       ${o.tienda ? `<p class="suave pequeno">en ${esc(o.tienda)} · ${(o.moneda || "").toUpperCase() === "MXN" ? "México" : "Estados Unidos"}</p>` : ""}
       <p>${esc(o.por_que || "")}</p>
-      ${o.url ? `<a class="boton" href="${esc(o.url)}" target="_blank" rel="noopener">Ver en la tienda ↗</a>` : ""}
+      ${notaFranquicia(o)}
       ${s.estado === "lista" && o.producto_id ? `<button class="boton principal vigilar" data-i="${i}">Vigilar esta</button>` : ""}
+      <div class="fila-botones">
+        ${o.url ? `<a class="boton chico" href="${esc(o.url)}" target="_blank" rel="noopener">Ver en la tienda ↗</a>` : ""}
+        ${compartirBoton(`Mira esta opción: ${o.nombre}${o.precio_hoy != null ? ` · ${precio(o.precio_hoy, o.moneda)}` : ""}${o.tienda ? ` en ${o.tienda}` : ""}`, o.url)}
+      </div>
+      ${(s.opciones || []).length > 1 ? `<label class="comparar"><input type="checkbox" class="cmp" value="${i}"> Comparar</label>` : ""}
     </section>`;
   const opciones = (s.opciones || []).map((o, i) => ({ o, i }));
   let yaRecomendada = false;
@@ -468,9 +583,14 @@ async function pantallaSolicitud(id) {
       <h1>“${esc(s.texto)}”</h1>
       ${s.nota ? `<p class="nota">${esc(s.nota)}</p>` : ""}
       ${ops || `<p class="suave">No encontré opciones buenas esta vez.</p>`}
+      <div id="comparacion"></div>
       ${otraVez}
       ${s.estado === "lista" ? `<button class="boton" id="ninguna">Ninguna me convence</button>` : ""}
-    </main>${barra("")}`);
+    </main>
+    <div class="barra-comparar" id="barra-cmp" hidden><span id="cmp-n"></span><button class="boton principal chico" id="ver-cmp">Ver lado a lado</button></div>
+    ${barra("")}`);
+  activarCompartir();
+  activarComparar(s);
   document.querySelectorAll(".refinar").forEach((b) => (b.onclick = async () => {
     const r = b.dataset.r;
     const lado = r === "mx" || r === "us" ? r : s.lado;
@@ -489,6 +609,45 @@ async function pantallaSolicitud(id) {
     await db.from("solicitudes").update({ estado: "cancelada" }).eq("id", s.id);
     aviso("Entendido. Puedes buscar otra cosa cuando quieras.");
     location.hash = "#/hoy";
+  };
+}
+
+/** Comparar 2 o 3 opciones lado a lado. */
+function activarComparar(s) {
+  const marcas = [...document.querySelectorAll(".cmp")];
+  const barraC = document.getElementById("barra-cmp"), n = document.getElementById("cmp-n");
+  if (!marcas.length || !barraC) return;
+  const elegidas = () => marcas.filter((m) => m.checked).map((m) => s.opciones[Number(m.value)]);
+  marcas.forEach((m) => (m.onchange = () => {
+    if (elegidas().length > 3) { m.checked = false; return aviso("Puedes comparar hasta 3 a la vez."); }
+    m.closest(".tarjeta").classList.toggle("marcada", m.checked);
+    const k = elegidas().length;
+    barraC.hidden = k < 2;
+    n.textContent = k === 1 ? "Elige otra para comparar" : `${k} elegidas`;
+  }));
+  document.getElementById("ver-cmp").onclick = () => {
+    const os = elegidas();
+    const fila = (titulo, f) => `<tr><th scope="row">${titulo}</th>${os.map((o) => `<td>${f(o)}</td>`).join("")}</tr>`;
+    const mxn = (o) => o.precio_mxn ?? ((o.moneda || "").toUpperCase() === "MXN" ? o.precio_hoy : null);
+    const minimo = Math.min(...os.map((o) => mxn(o) ?? Infinity));
+    document.getElementById("comparacion").innerHTML = `
+      <section class="tarjeta pila" id="tabla-cmp" tabindex="-1">
+        <span class="titulo">Lado a lado</span>
+        <div class="tabla-desliza"><table class="comparar-tabla">
+          <thead><tr><th></th>${os.map((o) => `<th scope="col">${foto(o.imagen)}<span>${esc(o.nombre)}</span></th>`).join("")}</tr></thead>
+          <tbody>
+            ${fila("Precio", (o) => `${o.precio_hoy != null ? precio(o.precio_hoy, o.moneda, o.precio_mxn) : "—"}${mxn(o) != null && mxn(o) === minimo ? `<br><span class="insignia verde">La más barata</span>` : ""}`)}
+            ${fila("Nivel", (o) => esc(NIVEL[o.nivel] || ""))}
+            ${fila("Tienda", (o) => esc(o.tienda || "—") + `<br><span class="suave pequeno">${(o.moneda || "").toUpperCase() === "MXN" ? "México" : "Estados Unidos"}</span>`)}
+            ${fila("¿Conviene hoy?", (o) => (o.veredicto ? insignia(o.veredicto) : "—"))}
+            ${fila("Al cruzar", (o) => (o.moneda || "").toUpperCase() !== "USD" ? "No aplica" : o.precio_hoy <= 150 ? "Cabe en la franquicia" : "Hay que declararlo")}
+            ${fila("Por qué", (o) => `<span class="pequeno">${esc(o.por_que || "—")}</span>`)}
+          </tbody>
+        </table></div>
+      </section>`;
+    barraC.hidden = true;
+    const t = document.getElementById("tabla-cmp");
+    t.scrollIntoView({ behavior: "smooth", block: "start" }); t.focus({ preventScroll: true });
   };
 }
 
@@ -551,12 +710,23 @@ async function pantallaAjustes() {
              <button class="boton principal" id="telegram">Conectar Telegram</button>`}
       </section>
       <section class="tarjeta pila">
+        <span class="titulo">Tamaño de la letra</span>
+        <div class="segmentos" role="radiogroup" aria-label="Tamaño de la letra">
+          <button class="segmento" role="radio" data-letra="normal" aria-checked="${leerLetra() === "normal"}">Normal</button>
+          <button class="segmento grande-a" role="radio" data-letra="grande" aria-checked="${leerLetra() === "grande"}">Grande</button>
+        </div>
+      </section>
+      <section class="tarjeta pila">
         <span class="titulo">Ponla en tu pantalla de inicio</span>
         <p class="suave"><b>iPhone:</b> en Safari toca Compartir ⬆︎ y luego "Agregar a inicio".<br><b>Android:</b> en Chrome toca ⋮ y luego "Agregar a la pantalla principal".</p>
       </section>
       <p class="suave pequeno">Entraste como ${esc(usuario.email)}</p>
       <button class="boton" id="salir">Salir</button>
     </main>${barra("ajustes")}`);
+  document.querySelectorAll(".segmento").forEach((b) => (b.onclick = () => {
+    ponerLetra(b.dataset.letra);
+    document.querySelectorAll(".segmento").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+  }));
   document.getElementById("f-nombre").onsubmit = async (e) => {
     e.preventDefault();
     const { error } = await db.from("perfiles").update({ nombre: document.getElementById("nombre").value.trim() }).eq("id", usuario.id);
