@@ -246,6 +246,35 @@ h2.seccion{font-size:25px;margin:14px 0 -2px}
 .resumen-texto b{color:var(--tinta);font-weight:600}
 @media (prefers-reduced-motion: reduce){.onda i{animation:none;height:14px}}
 .sugerencias[hidden]{display:none}
+
+/* uso, tallas y familia */
+.uso{gap:8px}
+.uso-fila{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:4px}
+.uso-fila b{font-family:'Newsreader',serif;font-weight:500;font-size:20px}
+.medidor{display:block;height:8px;border-radius:4px;background:var(--hundido);overflow:hidden}
+.medidor i{display:block;height:100%;border-radius:4px;background:var(--verde-t)}
+.medidor.casi i{background:var(--oro)}.medidor.lleno i{background:var(--rojo-t)}
+.enlace-tarjeta{gap:4px}
+.enlace-tarjeta .titulo::after{content:" ›";color:var(--tenue)}
+.lista-tallas{list-style:none;margin:0;padding:0}
+.lista-tallas li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--linea)}
+.lista-tallas li:first-child{border-top:0}
+.lista-tallas b{text-align:right}
+.interruptores{display:flex;flex-direction:column}
+.interruptor{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;border-top:1px solid var(--linea);font-weight:500;cursor:pointer}
+.interruptor:first-child{border-top:0}
+.interruptor input{position:absolute;opacity:0;width:1px;height:1px}
+.interruptor i{flex:none;position:relative;width:52px;height:32px;border-radius:16px;background:var(--linea);transition:background .15s}
+.interruptor i::after{content:"";position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .15s}
+.interruptor input:checked+i{background:var(--verde-t)}
+.interruptor input:checked+i::after{transform:translateX(20px)}
+.interruptor input:focus-visible+i{outline:3px solid var(--oro);outline-offset:2px}
+.segmentos.tres{grid-template-columns:1fr 1fr 1fr}
+.nota-talla{font-size:15px;color:var(--verde-t);background:var(--verde-f);border-radius:var(--r-chico);padding:8px 12px}
+.nota-talla[hidden]{display:none}
+.quedan{font-size:15px;font-weight:600;color:var(--verde-t)}
+.quedan.pocas{color:var(--rojo-t)}
+.quedan[hidden]{display:none}
 </style>
 </head>
 <body>

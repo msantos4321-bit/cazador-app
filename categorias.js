@@ -450,6 +450,10 @@ export function entender(texto, categoria) {
   for (const [re, clave, valor, etiqueta] of reglas[categoria.id] || []) if (!(clave in r) && re.test(t)) pon(clave, valor, etiqueta);
   const pulg = categoria.id === "tele" ? pulgadas(texto) : null;
   if (pulg && TAMANOS_TELE.includes(pulg)) etiquetas.unshift(`${pulg} pulgadas`);
+  if (categoria.id === "ropa" && pp && !("para_quien" in r)) {
+    const hombre = ["papa", "hijo", "esposo", "nieto", "abuelo", "suegro", "hermano", "novio"].includes(pp[1]);
+    pon("para_quien", hombre ? "hombre" : "mujer", hombre ? "Hombre" : "Mujer");
+  }
   const talla = texto.match(/\btalla\s+([\w.\/]+)/i);
   if (talla && categoria.id === "ropa") pon("talla", talla[1], `Talla ${talla[1]}`);
   return { respuestas: r, para, etiquetas };

@@ -98,7 +98,10 @@ function pantallaEntrar(correo = "") {
     const { error } = await db.auth.signInWithOtp({ email: correo, options: { emailRedirectTo: location.origin + location.pathname } });
     if (error) {
       boton.disabled = false; boton.textContent = "Mandarme el correo";
-      return aviso(error.status === 429 ? "Espera un minuto y vuelve a intentar." : "No se pudo mandar el código. Revisa el correo.", "error");
+      const sinInvitacion = /SIN_INVITACION|Database error|saving new user/i.test(error.message || "");
+      return aviso(error.status === 429 ? "Espera un minuto y vuelve a intentar."
+        : sinInvitacion ? "Este correo no tiene invitación. Pídele a Mauricio que te invite y vuelve a intentar."
+        : "No se pudo mandar el correo. Revisa que esté bien escrito.", "error");
     }
     pantallaCodigo(correo);
   };
@@ -190,6 +193,7 @@ async function pantallaHoy() {
       .in("estado", ["pendiente", "buscando", "lista", "sin_resultado"]).order("creado", { ascending: false }),
     db.from("perfiles").select("nombre").eq("id", usuario.id).single(),
   ]);
+  const uso = await leerUso();
   if (segs.error) return pintar(`<main><h1>No se pudo cargar</h1><p class="suave">Revisa tu internet y vuelve a abrir.</p><button class="boton principal" onclick="location.reload()">Intentar otra vez</button></main>${barra("hoy")}`);
   const lista = segs.data.map((s) => ({ ...s, v: Array.isArray(s.veredictos) ? s.veredictos[0] : s.veredictos }));
   // Precio más bajo de los últimos 90 días de cada producto
@@ -258,7 +262,7 @@ async function pantallaHoy() {
       ${solicitudes}
       ${tarjetas ? `<h2 class="seccion">Lo que vigilo</h2>${tarjetas}` : ""}
       ${!tarjetas && !solicitudes ? `<section class="vacio">${ICONO_BOLSA}<p><b>Todavía no vigilas nada.</b></p><p class="suave">Toca <b>Buscar algo</b> y escribe lo que quieres comprar, como lo dirías en voz alta.</p><a class="boton principal" href="#/agregar">Buscar algo</a></section>` : ""}
-      <p class="suave pequeno centro">Revisamos los precios solos todos los días.</p>
+      <p class="suave pequeno centro">Revisamos los precios solos todos los días.${uso?.invitado ? `<br>Este mes llevas ${uso.mis_busquedas} de ${uso.mi_cupo} búsquedas y vigilas ${uso.mis_vigilados} de ${uso.mi_tope} productos.` : ""}</p>
     </main>${barra("hoy")}`);
 }
 
@@ -369,7 +373,7 @@ const BORRADOR = "borrador-busqueda";
 function guardarBorrador() {
   if (!flujo) return;
   try {
-    localStorage.setItem(BORRADOR, JSON.stringify({ ...flujo, categoria: undefined, preguntas: undefined, elegidas: [...flujo.elegidas], guardado: Date.now() }));
+    localStorage.setItem(BORRADOR, JSON.stringify({ ...flujo, categoria: undefined, preguntas: undefined, aplicarTalla: undefined, tallasDe: undefined, elegidas: [...flujo.elegidas], guardado: Date.now() }));
   } catch {}
 }
 function leerBorrador() {
@@ -405,6 +409,7 @@ async function pantallaAgregar(textoInicial = "") {
       <a class="volver" href="#/hoy">‹ Mi lista</a>
       <h1>¿Qué quieres comprar?</h1>
       <p class="suave">Escríbelo o díctalo como se lo dirías a alguien. Entre más detalles, menos te pregunto.</p>
+      <p id="quedan" class="quedan" hidden></p>
       ${borrador ? `<button class="tarjeta borrador" id="seguir"><span class="suave pequeno">Te quedaste a medias</span><span class="titulo">“${esc(borrador.texto)}”</span><span class="enlace-falso">Continuar donde me quedé</span></button>` : ""}
       <form id="f-que" class="pila">
         <div class="campo-voz">
@@ -462,6 +467,14 @@ async function pantallaAgregar(textoInicial = "") {
     lista.querySelectorAll(".sugerencia").forEach((b) => (b.onclick = () => { que.value = b.dataset.v; lista.hidden = true; ir(que.value); }));
   });
   activarMicrofono(que, document.getElementById("mic"), document.getElementById("voz"));
+  leerUso().then((u) => {
+    const q = document.getElementById("quedan");
+    if (!q || !u?.invitado) return;
+    const quedan = Math.max(0, Math.min(u.mi_cupo - u.mis_busquedas, u.familia_cupo - u.familia_busquedas));
+    q.hidden = false;
+    q.className = `quedan ${quedan <= 2 ? "pocas" : ""}`;
+    q.textContent = quedan === 0 ? "Ya no te quedan búsquedas este mes. El día 1 se renuevan." : `Te ${quedan === 1 ? "queda 1 búsqueda" : `quedan ${quedan} búsquedas`} este mes.`;
+  });
   document.getElementById("f-que").onsubmit = (e) => { e.preventDefault(); detenerVoz(); ir(que.value); };
 }
 
@@ -605,21 +618,51 @@ async function pantallaAfinar() {
     personas.querySelectorAll(".persona").forEach((b) => (b.onclick = () => {
       f.para = b.dataset.p; f.paraElegido = true;
       document.getElementById("para").value = "";
+      if (f.aplicarTalla) f.aplicarTalla();
       actualizar();
     }));
   };
   const fijas = ["Mi papá", "Mi mamá"];
   pintarPersonas(fijas);
+  // Tallas guardadas: las mías ("") y las que me compartió la familia (por nombre)
+  const tallasDe = {};
+  const seccionTalla = document.querySelector('.pregunta[data-q="talla"]');
+  if (seccionTalla) seccionTalla.insertAdjacentHTML("beforeend", `<p id="nota-talla" class="nota-talla" hidden></p>`);
+  function aplicarTalla() {
+    if (f.categoria.id !== "ropa" || f.elegidas.has("talla")) return;
+    const datos = tallasDe[f.para || ""];
+    const t = tallaQueAplica(datos, `${f.texto} ${f.respuestas.prenda || ""}`);
+    const nota = document.getElementById("nota-talla");
+    const campo = document.querySelector('.respuesta-libre[data-q="talla"]');
+    if (t) {
+      f.respuestas.talla = t; f.tallaGuardada = true;
+      if (campo) campo.value = t;
+      if (nota) { nota.hidden = false; nota.textContent = `Usé la talla guardada ${f.para ? `de ${f.para}` : "tuya"}. Puedes cambiarla.`; }
+    } else if (f.tallaGuardada) {
+      delete f.respuestas.talla; f.tallaGuardada = false;
+      if (campo) campo.value = "";
+      if (nota) nota.hidden = true;
+    }
+  }
+  f.aplicarTalla = aplicarTalla;
   Promise.all([
     db.from("solicitudes").select("para").order("creado", { ascending: false }).limit(30),
     db.from("seguimientos").select("para").eq("activo", true),
-  ]).then(([a, b]) => {
-    const nombres = [...new Set([...(a.data || []), ...(b.data || [])].map((x) => x.para).filter(Boolean))];
+    db.rpc("familia"),
+    db.from("tallas").select("usuario,datos"),
+  ]).then(([a, b, fam, tal]) => {
+    const familia = fam.data || [];
+    const porUsuario = Object.fromEntries((tal.data || []).map((x) => [x.usuario, x.datos]));
+    if (porUsuario[usuario.id]) tallasDe[""] = porUsuario[usuario.id];
+    for (const m of familia) if (porUsuario[m.id]) tallasDe[m.nombre] = porUsuario[m.id];
+    f.tallasDe = tallasDe;
+    const nombres = [...new Set([...familia.map((m) => m.nombre), ...[...(a.data || []), ...(b.data || [])].map((x) => x.para).filter(Boolean)])];
     // "para mi papá" en la frase → la persona que ya tiene guardada como "Papá (Juan de Dios)"
     const clave = (t) => quitarAcentos(t.toLowerCase()).replace(/^mi /, "").split(/\W+/)[0];
     if (f.para && !f.paraElegido) f.para = nombres.find((n) => clave(n) === clave(f.para)) || f.para;
     const sinRepetir = fijas.filter((x) => !nombres.some((n) => clave(n) === clave(x)));
-    pintarPersonas([...nombres, ...sinRepetir].slice(0, 6));
+    pintarPersonas([...nombres, ...sinRepetir].slice(0, 8));
+    aplicarTalla();
     actualizar();
   });
 
@@ -664,6 +707,8 @@ async function pantallaAfinar() {
     buscar.disabled = true; buscar.textContent = "Mandando…";
     const respuestas = { ...f.respuestas };
     if (f.notas?.trim()) respuestas.notas = f.notas.trim();
+    const guardadas = f.tallasDe?.[f.para || ""];
+    if (f.categoria.id === "ropa" && guardadas) respuestas.tallas_guardadas = guardadas;
     const fila = {
       texto: f.texto,
       categoria: f.categoria.id,
@@ -672,7 +717,7 @@ async function pantallaAfinar() {
       lado: respuestas.lado || { tj: "mx", bc: "mx", sd: "us" }[respuestas.zona] || "ambos",
     };
     const { data, error } = await db.from("solicitudes").insert(fila).select("id").single();
-    if (error) { buscar.disabled = false; buscar.textContent = "Buscar mis opciones"; return aviso("No se pudo mandar. Revisa tu internet.", "error"); }
+    if (error) { buscar.disabled = false; buscar.textContent = "Buscar mis opciones"; return aviso(mensajeBase(error, "No se pudo mandar. Revisa tu internet."), "error"); }
     borrarBorrador(); flujo = null;
     location.hash = `#/solicitud/${data.id}`;
   };
@@ -768,7 +813,7 @@ async function pantallaSolicitud(id) {
       texto: `${s.texto} · ${etiqueta}`, categoria: s.categoria, para: s.para, lado,
       respuestas: { ...(s.respuestas || {}), lado, refinar: r, antes: s.id },
     }).select("id").single();
-    if (error) { b.disabled = false; return aviso("No se pudo. Intenta otra vez.", "error"); }
+    if (error) { b.disabled = false; b.textContent = "Intentar otra vez"; return aviso(mensajeBase(error, "No se pudo. Intenta otra vez."), "error"); }
     location.hash = `#/solicitud/${data.id}`;
   }));
   activarVigilar(s);
@@ -850,21 +895,198 @@ function activarVigilar(s) {
       activo: true,
     };
     const { error } = await db.from("seguimientos").upsert(fila, { onConflict: "usuario,producto_id" });
-    if (error) { b.disabled = false; b.textContent = "Vigilar esta"; return aviso("No se pudo guardar. Intenta otra vez.", "error"); }
+    if (error) { b.disabled = false; b.textContent = "Vigilar esta"; return aviso(mensajeBase(error, "No se pudo guardar. Intenta otra vez."), "error"); }
     if (b.dataset.i != null) await db.from("solicitudes").update({ estado: "elegida" }).eq("id", s.id);
     aviso("¡Listo! Ya la vigilamos. Te avisamos cuando convenga comprar.");
     location.hash = "#/hoy";
   }));
 }
 
+// ---------- cupos y errores de la base ----------
+/** Traduce los avisos de la base (cupos, invitación) a palabras normales. */
+function mensajeBase(error, siNo = "No se pudo guardar. Revisa tu internet.") {
+  const m = String(error?.message || "");
+  const n = (m.match(/:(\d+)/) || [])[1];
+  if (m.includes("SIN_INVITACION")) return "Tu correo ya no tiene acceso. Pídele a Mauricio que te vuelva a invitar.";
+  if (m.includes("CUPO_PERSONA")) return `Ya usaste tus ${n} búsquedas de este mes. El día 1 se renuevan.`;
+  if (m.includes("CUPO_FAMILIA")) return `La familia ya usó las ${n} búsquedas de este mes. El día 1 se renuevan.`;
+  if (m.includes("TOPE_PERSONA")) return `Ya vigilas ${n} productos, tu máximo. Deja de vigilar uno para agregar este.`;
+  if (m.includes("TOPE_FAMILIA")) return `La familia ya vigila ${n} productos, el máximo. Pide que dejen de vigilar alguno.`;
+  return siNo;
+}
+async function leerUso() {
+  const { data, error } = await db.rpc("uso_familia");
+  return error ? null : data;
+}
+const barraUso = (usado, total) => {
+  const p = total ? Math.min(100, Math.round((usado / total) * 100)) : 0;
+  return `<span class="medidor ${p >= 90 ? "lleno" : p >= 70 ? "casi" : ""}" role="img" aria-label="${usado} de ${total}"><i style="width:${p}%"></i></span>`;
+};
+function tarjetaUso(u) {
+  if (!u || !u.invitado) return "";
+  return `<section class="tarjeta pila uso">
+    <span class="titulo">Tu uso este mes</span>
+    <div class="uso-fila"><span>Búsquedas</span><b>${u.mis_busquedas} de ${u.mi_cupo}</b></div>${barraUso(u.mis_busquedas, u.mi_cupo)}
+    <div class="uso-fila"><span>Productos vigilando</span><b>${u.mis_vigilados} de ${u.mi_tope}</b></div>${barraUso(u.mis_vigilados, u.mi_tope)}
+    <p class="suave pequeno">Toda la familia: ${u.familia_busquedas} de ${u.familia_cupo} búsquedas y ${u.familia_vigilados} de ${u.familia_tope} productos. Las búsquedas se renuevan el día 1.</p>
+  </section>`;
+}
+
+// ---------- tallas ----------
+const CAMPOS_TALLA = [
+  { clave: "pantalon", etiqueta: "Pantalón o jeans", ayuda: "Cintura x largo, ej. 32x30" },
+  { clave: "camisa", etiqueta: "Camisa, blusa o playera", ayuda: "Ej. M, G, 15½" },
+  { clave: "chamarra", etiqueta: "Chamarra o sudadera", ayuda: "Ej. M, XL" },
+  { clave: "vestido", etiqueta: "Vestido o falda", ayuda: "Ej. 8, M" },
+  { clave: "zapatos_mx", etiqueta: "Zapatos (talla de México)", ayuda: "Ej. 27" },
+  { clave: "zapatos_us", etiqueta: "Zapatos (talla de EE. UU.)", ayuda: "Ej. 9 o 9.5" },
+  { clave: "ropa_interior", etiqueta: "Ropa interior o brasier", ayuda: "Ej. M, 34B" },
+  { clave: "notas", etiqueta: "Gustos y detalles", ayuda: "Ej. corte slim, colores oscuros, no le gusta el poliéster" },
+];
+/** La talla que aplica a lo que se busca ("jeans" → pantalón). */
+function tallaQueAplica(datos, texto) {
+  if (!datos) return null;
+  const t = quitarAcentos(String(texto).toLowerCase());
+  const reglas = [[/(jean|pantal|short|bermuda)/, ["pantalon"]], [/(camisa|playera|blusa|polo|camiseta)/, ["camisa"]],
+    [/(chamarra|chaqueta|abrigo|sudadera|sueter|chaleco)/, ["chamarra"]], [/(vestido|falda)/, ["vestido"]],
+    [/(tenis|zapato|bota|sandalia|chancla|calzado)/, ["zapatos_us", "zapatos_mx"]], [/(brasier|ropa interior|calzon|boxer|bra\b)/, ["ropa_interior"]]];
+  for (const [re, claves] of reglas) {
+    if (!re.test(t)) continue;
+    const partes = claves.filter((k) => datos[k]).map((k) => (k === "zapatos_us" ? `${datos[k]} EE. UU.` : k === "zapatos_mx" ? `${datos[k]} MX` : datos[k]));
+    return partes.length ? partes.join(" / ") : null;
+  }
+  return null;
+}
+
+async function pantallaTallas() {
+  pintar(esqueleto("Tallas", 2) + barra("ajustes"));
+  const [mias, fam] = await Promise.all([
+    db.from("tallas").select("datos").eq("usuario", usuario.id).maybeSingle(),
+    db.rpc("familia"),
+  ]);
+  if (mias.error && fam.error) return pintar(`<main><a class="volver" href="#/ajustes">‹ Ajustes</a><h1>Tallas</h1><p class="nota">Esta parte todavía no está activada. Mauricio la activa en unos minutos.</p></main>${barra("ajustes")}`);
+  const datos = mias.data?.datos || {};
+  const familia = fam.data || [];
+  const meComparten = familia.filter((f) => f.me_comparte);
+  let deOtros = [];
+  if (meComparten.length) {
+    const { data } = await db.from("tallas").select("usuario,datos").in("usuario", meComparten.map((f) => f.id));
+    deOtros = data || [];
+  }
+  const tablaTallas = (d) => {
+    const filas = CAMPOS_TALLA.filter((c) => d?.[c.clave]).map((c) => `<li><span>${esc(c.etiqueta)}</span><b>${esc(d[c.clave])}</b></li>`).join("");
+    return filas ? `<ul class="lista-tallas">${filas}</ul>` : `<p class="suave pequeno">Todavía no anota sus tallas.</p>`;
+  };
+  pintar(`
+    <main>
+      <a class="volver" href="#/ajustes">‹ Ajustes</a>
+      <h1>Tallas</h1>
+      <p class="suave">Con tus tallas guardadas, al buscar ropa o zapatos ya no te las pregunto.</p>
+      <form id="f-tallas" class="tarjeta pila">
+        <span class="titulo">Mis tallas</span>
+        ${CAMPOS_TALLA.map((c) => `<label for="t-${c.clave}">${esc(c.etiqueta)}</label>
+          ${c.clave === "notas" ? `<textarea id="t-${c.clave}" rows="2" placeholder="${esc(c.ayuda)}">${esc(datos[c.clave] || "")}</textarea>`
+            : `<input id="t-${c.clave}" autocomplete="off" placeholder="${esc(c.ayuda)}" value="${esc(datos[c.clave] || "")}">`}`).join("")}
+        <button class="boton principal" type="submit">Guardar mis tallas</button>
+      </form>
+      <section class="tarjeta pila">
+        <span class="titulo">¿Quién puede ver tus tallas?</span>
+        <p class="suave">Sirve para que te regalen algo de tu talla. Solo las ven las personas que actives.</p>
+        ${familia.length ? `<div class="interruptores">${familia.map((f) => `
+          <label class="interruptor"><span>${esc(f.nombre)}</span><input type="checkbox" class="permiso" value="${esc(f.id)}" ${f.le_comparto ? "checked" : ""}><i aria-hidden="true"></i></label>`).join("")}</div>`
+          : `<p class="suave pequeno">Cuando tus familiares entren a la app, aparecen aquí.</p>`}
+      </section>
+      ${meComparten.length ? `<h2 class="seccion">Tallas que te compartieron</h2>
+        ${meComparten.map((f) => `<section class="tarjeta pila"><span class="titulo">${esc(f.nombre)}</span>${tablaTallas(deOtros.find((x) => x.usuario === f.id)?.datos)}</section>`).join("")}` : ""}
+    </main>${barra("ajustes")}`);
+  document.getElementById("f-tallas").onsubmit = async (e) => {
+    e.preventDefault();
+    const nuevos = {};
+    for (const c of CAMPOS_TALLA) { const v = document.getElementById(`t-${c.clave}`).value.trim(); if (v) nuevos[c.clave] = v; }
+    const { error } = await db.from("tallas").upsert({ usuario: usuario.id, datos: nuevos, actualizado: new Date().toISOString() }, { onConflict: "usuario" });
+    aviso(error ? "No se pudieron guardar." : "Listo, tus tallas quedaron guardadas.", error ? "error" : "");
+  };
+  document.querySelectorAll(".permiso").forEach((c) => (c.onchange = async () => {
+    const { error } = c.checked
+      ? await db.from("tallas_permisos").upsert({ dueno: usuario.id, lector: c.value }, { onConflict: "dueno,lector" })
+      : await db.from("tallas_permisos").delete().eq("dueno", usuario.id).eq("lector", c.value);
+    if (error) { c.checked = !c.checked; return aviso("No se pudo cambiar.", "error"); }
+    aviso(c.checked ? "Ahora puede ver tus tallas." : "Ya no puede ver tus tallas.");
+  }));
+}
+
+// ---------- familia y accesos (solo Mauricio) ----------
+async function pantallaFamilia() {
+  pintar(esqueleto("Familia y accesos", 3) + barra("ajustes"));
+  const u = await leerUso();
+  if (!u?.admin) return pintar(`<main><a class="volver" href="#/ajustes">‹ Ajustes</a><h1>Familia y accesos</h1><p class="suave">Solo el administrador ve esta parte.</p></main>${barra("ajustes")}`);
+  const personas = u.personas || [];
+  pintar(`
+    <main>
+      <a class="volver" href="#/ajustes">‹ Ajustes</a>
+      <h1>Familia y accesos</h1>
+      <p class="suave">Solo pueden entrar los correos de esta lista. Si alguien reenvía la liga, la otra persona no puede entrar.</p>
+      <section class="tarjeta pila uso">
+        <span class="titulo">Toda la familia este mes</span>
+        <div class="uso-fila"><span>Búsquedas</span><b>${u.familia_busquedas} de ${u.familia_cupo}</b></div>${barraUso(u.familia_busquedas, u.familia_cupo)}
+        <div class="uso-fila"><span>Productos vigilando</span><b>${u.familia_vigilados} de ${u.familia_tope}</b></div>${barraUso(u.familia_vigilados, u.familia_tope)}
+      </section>
+      ${personas.map((p) => `
+        <section class="tarjeta pila persona-acceso">
+          <span class="cabeza"><span class="titulo">${esc(p.nombre || p.email)}</span>${p.entro ? `<span class="insignia verde">Ya entró</span>` : `<span class="insignia gris">Sin entrar</span>`}</span>
+          <span class="suave pequeno">${esc(p.email)}</span>
+          <div class="uso-fila"><span>Búsquedas</span><b>${p.busquedas} de ${p.busquedas_mes}</b></div>${barraUso(p.busquedas, p.busquedas_mes)}
+          <div class="uso-fila"><span>Vigilando</span><b>${p.vigilados} de ${p.vigilados_max}</b></div>${barraUso(p.vigilados, p.vigilados_max)}
+          ${p.email !== (usuario.email || "").toLowerCase() ? `<button class="boton chico quitar" data-email="${esc(p.email)}" data-nombre="${esc(p.nombre || p.email)}">Quitar acceso</button>` : ""}
+        </section>`).join("")}
+      <form id="f-invitar" class="tarjeta pila">
+        <span class="titulo">Invitar a alguien</span>
+        <label for="inv-nombre">Nombre</label>
+        <input id="inv-nombre" required placeholder="Ej. Mamá, Tía Lupita" autocomplete="off">
+        <label for="inv-correo">Su correo</label>
+        <input id="inv-correo" type="email" inputmode="email" required placeholder="nombre@gmail.com" autocomplete="off">
+        <label>Búsquedas al mes</label>
+        <div class="segmentos tres" role="radiogroup" aria-label="Búsquedas al mes">
+          ${[6, 12, 20].map((n) => `<button type="button" class="segmento cupo" role="radio" data-n="${n}" aria-checked="${n === 12}">${n}</button>`).join("")}
+        </div>
+        <button class="boton principal" type="submit">Invitar</button>
+        <p class="suave pequeno">Después mándale la liga de la app. Entra con ese mismo correo.</p>
+      </form>
+    </main>${barra("ajustes")}`);
+  let cupo = 12;
+  document.querySelectorAll(".cupo").forEach((b) => (b.onclick = () => {
+    cupo = Number(b.dataset.n);
+    document.querySelectorAll(".cupo").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+  }));
+  document.getElementById("f-invitar").onsubmit = async (e) => {
+    e.preventDefault();
+    const email = document.getElementById("inv-correo").value.trim().toLowerCase();
+    const nombre = document.getElementById("inv-nombre").value.trim();
+    const { error } = await db.from("invitados").upsert({ email, nombre, busquedas_mes: cupo, vigilados_max: cupo >= 20 ? 6 : 4 }, { onConflict: "email" });
+    if (error) return aviso("No se pudo invitar. Revisa el correo.", "error");
+    aviso(`Listo. ${nombre} ya puede entrar con ${email}.`);
+    pantallaFamilia();
+  };
+  document.querySelectorAll(".quitar").forEach((b) => (b.onclick = async () => {
+    if (!confirm(`¿Quitarle el acceso a ${b.dataset.nombre}? Ya no podrá buscar ni vigilar productos nuevos.`)) return;
+    const { error } = await db.from("invitados").delete().eq("email", b.dataset.email);
+    if (error) return aviso("No se pudo quitar.", "error");
+    aviso("Acceso quitado.");
+    pantallaFamilia();
+  }));
+}
+
 // ---------- ajustes ----------
 async function pantallaAjustes() {
-  const { data: perfil } = await db.from("perfiles").select("*").eq("id", usuario.id).single();
+  const [{ data: perfil }, uso] = await Promise.all([db.from("perfiles").select("*").eq("id", usuario.id).single(), leerUso()]);
   const conectado = !!perfil?.telegram_chat_id;
   pintar(`
     <main>
       <p class="ceja">Ajustes</p>
       <h1>Tus datos</h1>
+      ${tarjetaUso(uso)}
+      <a class="tarjeta enlace-tarjeta" href="#/tallas"><span class="titulo">Tallas</span><span class="suave">Las tuyas y las que te compartió tu familia</span></a>
+      ${uso?.admin ? `<a class="tarjeta enlace-tarjeta" href="#/familia"><span class="titulo">Familia y accesos</span><span class="suave">Quién puede entrar y cuánto ha usado</span></a>` : ""}
       <form id="f-nombre" class="tarjeta pila">
         <label for="nombre">¿Cómo te llamas?</label>
         <input id="nombre" value="${esc(perfil?.nombre || "")}" autocomplete="name">
@@ -922,6 +1144,8 @@ async function enrutar() {
   if (ruta === "afinar") return pantallaAfinar();
   if (ruta === "solicitud" && id) return pantallaSolicitud(id);
   if (ruta === "ajustes") return pantallaAjustes();
+  if (ruta === "tallas") return pantallaTallas();
+  if (ruta === "familia") return pantallaFamilia();
   return pantallaHoy();
 }
 
