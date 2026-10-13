@@ -257,6 +257,7 @@ async function pantallaHoy() {
     <main>
       <p class="ceja">${esc(fechaHoy())}</p>
       <h1>${saludo}</h1>
+      ${uso?.pausado ? `<p class="nota">Tu cuenta está en pausa: no se hacen búsquedas ni se vigilan precios. Habla con Mauricio para reactivarla.</p>` : ""}
       ${chips ? `<div class="resumen">${chips}</div>` : ""}
       ${temporada}
       ${heroe}
@@ -270,7 +271,7 @@ async function pantallaHoy() {
           <span class="suave">${activas.length} ${activas.length === 1 ? "casa" : "casas"}${visitar ? ` · ${visitar} para visitar` : ""}${novedades ? ` · <b>${novedades} con cambios</b>` : ""}</span></a>`;
       })() : ""}
       ${!tarjetas && !solicitudes ? `<section class="vacio">${ICONO_BOLSA}<p><b>Todavía no vigilas nada.</b></p><p class="suave">Toca <b>Buscar algo</b> y escribe lo que quieres comprar, como lo dirías en voz alta.</p><a class="boton principal" href="#/agregar">Buscar algo</a></section>` : ""}
-      <p class="suave pequeno centro">Revisamos los precios solos todos los días.${uso?.invitado ? `<br>Este mes llevas ${uso.mis_busquedas} de ${uso.mi_cupo} búsquedas y vigilas ${uso.mis_vigilados} de ${uso.mi_tope} productos.` : ""}</p>
+      <p class="suave pequeno centro">Revisamos los precios solos todos los días.${uso?.invitado ? (uso.saldo !== undefined ? `<br>Te quedan <b>${Math.max(uso.saldo, 0)} créditos</b> este mes · <a href="#/ajustes">ver detalle</a>` : `<br>Este mes llevas ${uso.mis_busquedas} de ${uso.mi_cupo} búsquedas y vigilas ${uso.mis_vigilados} de ${uso.mi_tope} productos.`) : ""}</p>
     </main>${barra("hoy")}`);
 }
 
@@ -478,8 +479,16 @@ async function pantallaAgregar(textoInicial = "") {
   leerUso().then((u) => {
     const q = document.getElementById("quedan");
     if (!q || !u?.invitado) return;
-    const quedan = Math.max(0, Math.min(u.mi_cupo - u.mis_busquedas, u.familia_cupo - u.familia_busquedas));
     q.hidden = false;
+    if (u.saldo !== undefined) {
+      const costo = (u.costos || {}).busqueda || 10;
+      const alcanza = Math.max(0, Math.min(Math.floor(u.saldo / costo), u.familia_cupo - u.familia_busquedas));
+      q.className = `quedan ${alcanza <= 2 ? "pocas" : ""}`;
+      q.textContent = u.pausado ? "Tu cuenta está en pausa." : alcanza === 0 ? `Ya no te alcanzan los créditos para buscar (cada búsqueda usa ${costo}).`
+        : `Cada búsqueda usa ${costo} créditos. Tienes ${Math.max(u.saldo, 0)}: te alcanza para ${alcanza === 1 ? "1 búsqueda" : `${alcanza} búsquedas`}.`;
+      return;
+    }
+    const quedan = Math.max(0, Math.min(u.mi_cupo - u.mis_busquedas, u.familia_cupo - u.familia_busquedas));
     q.className = `quedan ${quedan <= 2 ? "pocas" : ""}`;
     q.textContent = quedan === 0 ? "Ya no te quedan búsquedas este mes. El día 1 se renuevan." : `Te ${quedan === 1 ? "queda 1 búsqueda" : `quedan ${quedan} búsquedas`} este mes.`;
   });
@@ -616,7 +625,7 @@ async function pantallaAfinar() {
     </main>
     <div class="pie-afinar">
       <p id="resumen" class="resumen-texto"></p>
-      <button class="boton principal" id="buscar">Buscar mis opciones</button>
+      <button class="boton principal" id="buscar">Buscar mis opciones <span class="costo">· 10 créditos</span></button>
     </div>`);
 
   // Personas a las que ya les ha buscado, para elegirlas con un toque
@@ -1070,7 +1079,7 @@ async function pantallaSolicitud(id) {
       ${o.tienda ? `<p class="suave pequeno">en ${esc(o.tienda)} · ${(o.moneda || "").toUpperCase() === "MXN" ? "México" : "Estados Unidos"}</p>` : ""}
       <p>${esc(o.por_que || "")}</p>
       ${notaFranquicia(o)}
-      ${s.estado === "lista" && o.producto_id ? `<button class="boton principal vigilar" data-i="${i}">Vigilar esta</button>` : ""}
+      ${s.estado === "lista" && o.producto_id ? `<button class="boton principal vigilar" data-i="${i}">Vigilar esta <span class="costo">· 1 crédito al día</span></button>` : ""}
       <div class="fila-botones">
         ${o.url ? `<a class="boton chico" href="${esc(o.url)}" target="_blank" rel="noopener">Ver en la tienda ↗</a>` : ""}
         ${compartirBoton(`Mira esta opción: ${o.nombre}${o.precio_hoy != null ? ` · ${precio(o.precio_hoy, o.moneda)}` : ""}${o.tienda ? ` en ${o.tienda}` : ""}`, o.url)}
@@ -1222,6 +1231,9 @@ function mensajeBase(error, siNo = "No se pudo guardar. Revisa tu internet.") {
   if (m.includes("CUPO_FAMILIA")) return `La familia ya usó las ${n} búsquedas de este mes. El día 1 se renuevan.`;
   if (m.includes("TOPE_PERSONA")) return `Ya vigilas ${n} productos, tu máximo. Deja de vigilar uno para agregar este.`;
   if (m.includes("TOPE_CASAS")) return `Ya guardaste ${n} casas, el máximo. Quita alguna que ya no te interese.`;
+  if (m.includes("SIN_CREDITOS")) return `Te faltan créditos: necesitas ${n} y ya no te alcanzan este mes. Pídele créditos extra a Mauricio o espera al día 1.`;
+  if (m.includes("PAUSADO")) return "Tu cuenta está en pausa. Habla con Mauricio para reactivarla.";
+  if (m.includes("NO_HA_ENTRADO")) return "Esa persona todavía no ha entrado a la app; podrás darle créditos extra cuando entre.";
   if (m.includes("TOPE_FAMILIA")) return `La familia ya vigila ${n} productos, el máximo. Pide que dejen de vigilar alguno.`;
   return siNo;
 }
@@ -1235,11 +1247,32 @@ const barraUso = (usado, total) => {
 };
 function tarjetaUso(u) {
   if (!u || !u.invitado) return "";
-  return `<section class="tarjeta pila uso">
+  if (u.saldo === undefined) return `<section class="tarjeta pila uso">
     <span class="titulo">Tu uso este mes</span>
     <div class="uso-fila"><span>Búsquedas</span><b>${u.mis_busquedas} de ${u.mi_cupo}</b></div>${barraUso(u.mis_busquedas, u.mi_cupo)}
     <div class="uso-fila"><span>Productos vigilando</span><b>${u.mis_vigilados} de ${u.mi_tope}</b></div>${barraUso(u.mis_vigilados, u.mi_tope)}
-    <p class="suave pequeno">Toda la familia: ${u.familia_busquedas} de ${u.familia_cupo} búsquedas y ${u.familia_vigilados} de ${u.familia_tope} productos. Las búsquedas se renuevan el día 1.</p>
+  </section>`;
+  const c = u.costos || { busqueda: 10, vigilancia: 1, casa: 1 };
+  const g = u.gastado || {};
+  const diario = u.mis_vigilados * c.vigilancia;
+  const semanal = u.mis_casas * c.casa;
+  const porDia = diario + semanal / 7;
+  const dias = porDia ? Math.floor(Math.max(u.saldo, 0) / porDia) : null;
+  const nombres = { busqueda: "Búsquedas", vigilancia: "Vigilar productos", casa: "Casas guardadas", ajuste: "Ajustes" };
+  const mov = (m) => `<li><span>${esc(m.detalle || nombres[m.concepto] || m.concepto)}<span class="suave pequeno"> · ${new Date(m.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</span></span><b class="${m.cantidad > 0 ? "mas" : ""}">${m.cantidad > 0 ? "+" : ""}${m.cantidad}</b></li>`;
+  return `<section class="tarjeta pila uso creditos">
+    <span class="titulo">Tus créditos</span>
+    ${u.pausado ? `<p class="nota">Tu cuenta está en pausa. Habla con Mauricio para reactivarla.</p>` : ""}
+    <p class="saldo"><b>${Math.max(u.saldo, 0)}</b> <span>de ${u.mensualidad} este mes</span></p>
+    ${barraUso(u.mensualidad - Math.max(u.saldo, 0), u.mensualidad)}
+    <p class="suave pequeno">${diario ? `Vigilar tus ${u.mis_vigilados} productos gasta ${diario} al día${dias !== null ? `: te alcanza para unos ${dias} días más` : ""}. ` : ""}${semanal ? `Tus ${u.mis_casas} casas guardadas gastan ${semanal} a la semana. ` : ""}Se renuevan el día 1.</p>
+    <ul class="costos">
+      <li><span>Una búsqueda</span><b>${c.busqueda}</b></li>
+      <li><span>Vigilar un producto, por día</span><b>${c.vigilancia}</b></li>
+      <li><span>Una casa guardada, por semana</span><b>${c.casa}</b></li>
+    </ul>
+    ${Object.keys(g).length ? `<p class="suave pequeno">Este mes: ${Object.entries(g).map(([k, v]) => `${(nombres[k] || k).toLowerCase()} ${v}`).join(" · ")}</p>` : ""}
+    ${(u.movimientos || []).length ? `<details class="calculadora"><summary>Ver movimientos</summary><ul class="movimientos">${u.movimientos.map(mov).join("")}</ul></details>` : ""}
   </section>`;
 }
 
@@ -1332,48 +1365,106 @@ async function pantallaFamilia() {
   const u = await leerUso();
   if (!u?.admin) return pintar(`<main><a class="volver" href="#/ajustes">‹ Ajustes</a><h1>Familia y accesos</h1><p class="suave">Solo el administrador ve esta parte.</p></main>${barra("ajustes")}`);
   const personas = u.personas || [];
+  const creditos = u.saldo !== undefined;
+  const sis = u.sistema || {};
+  const nombres = { busqueda: "búsquedas", vigilancia: "vigilar", casa: "casas" };
+  const sinRepartir = (u.bolsa || 0) - (u.repartido || 0);
+  const tarjetaPersona = (p) => {
+    const yo = p.email === (usuario.email || "").toLowerCase();
+    const gastos = Object.entries(p.gastado || {}).map(([k, v]) => `${nombres[k] || k} ${v}`).join(" · ");
+    return `<section class="tarjeta pila persona-acceso ${p.pausado ? "pausada" : ""}" data-email="${esc(p.email)}" data-nombre="${esc(p.nombre || p.email)}">
+      <span class="cabeza"><span class="titulo">${esc(p.nombre || p.email)}</span>
+        ${p.pausado ? `<span class="insignia rojo">En pausa</span>` : p.entro ? `<span class="insignia verde">Activo</span>` : `<span class="insignia gris">Sin entrar</span>`}</span>
+      <span class="suave pequeno">${esc(p.email)}</span>
+      ${creditos ? `
+        <p class="saldo chico"><b>${Math.max(p.saldo ?? 0, 0)}</b> <span>créditos de ${p.creditos_mes} al mes</span></p>
+        ${barraUso(p.creditos_mes - Math.max(p.saldo ?? 0, 0), p.creditos_mes)}
+        <p class="suave pequeno">${p.busquedas} búsquedas · vigila ${p.vigilados} · ${p.casas} casas${gastos ? ` · gastó: ${gastos}` : ""}${p.pausados_creditos ? ` · <b>${p.pausados_creditos} pausados por falta de créditos</b>` : ""}</p>
+        <div class="ajuste-mes">
+          <span>Mensualidad</span>
+          <button class="paso menos" aria-label="Quitar 50 a la mensualidad">−</button>
+          <b class="mens">${p.creditos_mes}</b>
+          <button class="paso mas" aria-label="Sumar 50 a la mensualidad">+</button>
+        </div>
+        ${p.entro ? `<div class="regalos"><span class="suave pequeno">Dar extra este mes:</span>
+          ${[20, 50, 100].map((n) => `<button class="chip regalo" data-n="${n}">+${n}</button>`).join("")}</div>` : ""}
+      ` : `<div class="uso-fila"><span>Búsquedas</span><b>${p.busquedas}</b></div>`}
+      ${yo ? "" : `<div class="fila-botones">
+        <button class="boton chico pausar">${p.pausado ? "Reanudar" : "Pausar"}</button>
+        <button class="boton chico quitar">Quitar acceso</button>
+      </div>`}
+    </section>`;
+  };
   pintar(`
     <main>
       <a class="volver" href="#/ajustes">‹ Ajustes</a>
       <h1>Familia y accesos</h1>
-      <p class="suave">Solo pueden entrar los correos de esta lista. Si alguien reenvía la liga, la otra persona no puede entrar.</p>
+      <p class="suave">Solo entran los correos de esta lista. Tú repartes los créditos: cada búsqueda gasta 10, vigilar un producto 1 al día y cada casa guardada 1 a la semana.</p>
+      ${creditos ? `
       <section class="tarjeta pila uso">
-        <span class="titulo">Toda la familia este mes</span>
-        <div class="uso-fila"><span>Búsquedas</span><b>${u.familia_busquedas} de ${u.familia_cupo}</b></div>${barraUso(u.familia_busquedas, u.familia_cupo)}
-        <div class="uso-fila"><span>Productos vigilando</span><b>${u.familia_vigilados} de ${u.familia_tope}</b></div>${barraUso(u.familia_vigilados, u.familia_tope)}
+        <span class="titulo">Bolsa de la familia</span>
+        <p class="saldo"><b>${Number(u.bolsa).toLocaleString("es-MX")}</b> <span>créditos al mes</span></p>
+        <p class="suave pequeno">Repartidos ${u.repartido}${sinRepartir >= 0 ? ` · sin repartir ${sinRepartir}` : ` · <b class="rojo-t">te pasaste por ${-sinRepartir}</b>`}. La bolsa está calculada para no salir de lo gratis.</p>
+        <div class="uso-fila"><span>Búsquedas de la familia</span><b>${u.familia_busquedas} de ${u.familia_cupo}</b></div>${barraUso(u.familia_busquedas, u.familia_cupo)}
+        <div class="uso-fila"><span>Productos vigilados</span><b>${u.familia_vigilados} de ${u.familia_tope}</b></div>${barraUso(u.familia_vigilados, u.familia_tope)}
       </section>
-      ${personas.map((p) => `
-        <section class="tarjeta pila persona-acceso">
-          <span class="cabeza"><span class="titulo">${esc(p.nombre || p.email)}</span>${p.entro ? `<span class="insignia verde">Ya entró</span>` : `<span class="insignia gris">Sin entrar</span>`}</span>
-          <span class="suave pequeno">${esc(p.email)}</span>
-          <div class="uso-fila"><span>Búsquedas</span><b>${p.busquedas} de ${p.busquedas_mes}</b></div>${barraUso(p.busquedas, p.busquedas_mes)}
-          <div class="uso-fila"><span>Vigilando</span><b>${p.vigilados} de ${p.vigilados_max}</b></div>${barraUso(p.vigilados, p.vigilados_max)}
-          ${p.email !== (usuario.email || "").toLowerCase() ? `<button class="boton chico quitar" data-email="${esc(p.email)}" data-nombre="${esc(p.nombre || p.email)}">Quitar acceso</button>` : ""}
-        </section>`).join("")}
+      ${sis.lectura_tope ? `<section class="tarjeta pila uso">
+        <span class="titulo">Servicios gratis este mes</span>
+        <div class="uso-fila"><span>Lectura de tiendas</span><b>${sis.lectura_creditos.toLocaleString("es-MX")} de ${sis.lectura_tope.toLocaleString("es-MX")}</b></div>${barraUso(sis.lectura_creditos, sis.lectura_tope)}
+        <div class="uso-fila"><span>Google Shopping</span><b>${sis.google_busquedas} de ${sis.google_tope}</b></div>${barraUso(sis.google_busquedas, sis.google_tope)}
+        <p class="suave pequeno">Si alguna barra se pone roja, baja mensualidades o pausa a alguien. Actualizado cada hora.</p>
+      </section>` : ""}` : `<p class="nota">Falta activar los créditos (archivo 06_creditos.sql en Supabase).</p>`}
+      <h2 class="seccion">Personas</h2>
+      ${personas.map(tarjetaPersona).join("")}
       <form id="f-invitar" class="tarjeta pila">
         <span class="titulo">Invitar a alguien</span>
         <label for="inv-nombre">Nombre</label>
         <input id="inv-nombre" required placeholder="Ej. Mamá, Tía Lupita" autocomplete="off">
         <label for="inv-correo">Su correo</label>
         <input id="inv-correo" type="email" inputmode="email" required placeholder="nombre@gmail.com" autocomplete="off">
-        <label>Búsquedas al mes</label>
-        <div class="segmentos tres" role="radiogroup" aria-label="Búsquedas al mes">
-          ${[6, 12, 20].map((n) => `<button type="button" class="segmento cupo" role="radio" data-n="${n}" aria-checked="${n === 12}">${n}</button>`).join("")}
+        <label>Créditos al mes</label>
+        <div class="segmentos tres" role="radiogroup" aria-label="Créditos al mes">
+          ${[100, 200, 300].map((n) => `<button type="button" class="segmento cupo" role="radio" data-n="${n}" aria-checked="${n === 200}">${n}</button>`).join("")}
         </div>
         <button class="boton principal" type="submit">Invitar</button>
         <p class="suave pequeno">Después mándale la liga de la app. Entra con ese mismo correo.</p>
       </form>
     </main>${barra("ajustes")}`);
-  let cupo = 12;
+  let cupo = 200;
   document.querySelectorAll(".cupo").forEach((b) => (b.onclick = () => {
     cupo = Number(b.dataset.n);
     document.querySelectorAll(".cupo").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+  }));
+  const tarjetaDe = (b) => b.closest(".persona-acceso");
+  document.querySelectorAll(".paso").forEach((b) => (b.onclick = async () => {
+    const t = tarjetaDe(b), el = t.querySelector(".mens");
+    const nuevo = Math.max(0, Number(el.textContent) + (b.classList.contains("mas") ? 50 : -50));
+    const { error } = await db.rpc("admin_mensualidad", { correo: t.dataset.email, creditos: nuevo });
+    if (error) return aviso(mensajeBase(error, "No se pudo cambiar."), "error");
+    el.textContent = nuevo;
+    aviso(`${t.dataset.nombre}: ${nuevo} créditos al mes.`);
+  }));
+  document.querySelectorAll(".regalo").forEach((b) => (b.onclick = async () => {
+    const t = tarjetaDe(b);
+    const { error } = await db.rpc("admin_regalar", { correo: t.dataset.email, creditos: Number(b.dataset.n), nota: null });
+    if (error) return aviso(mensajeBase(error, "No se pudo."), "error");
+    aviso(`Listo: +${b.dataset.n} créditos para ${t.dataset.nombre}.`);
+    pantallaFamilia();
+  }));
+  document.querySelectorAll(".pausar").forEach((b) => (b.onclick = async () => {
+    const t = tarjetaDe(b), pausar = b.textContent.trim() === "Pausar";
+    if (pausar && !confirm(`¿Pausar a ${t.dataset.nombre}? No podrá buscar y se detiene la vigilancia de sus productos hasta que la reanudes.`)) return;
+    const { error } = await db.rpc("admin_pausar", { correo: t.dataset.email, pausar });
+    if (error) return aviso(mensajeBase(error, "No se pudo."), "error");
+    aviso(pausar ? `${t.dataset.nombre} quedó en pausa.` : `${t.dataset.nombre} ya está activo otra vez.`);
+    pantallaFamilia();
   }));
   document.getElementById("f-invitar").onsubmit = async (e) => {
     e.preventDefault();
     const email = document.getElementById("inv-correo").value.trim().toLowerCase();
     const nombre = document.getElementById("inv-nombre").value.trim();
-    const { error } = await db.from("invitados").upsert({ email, nombre, busquedas_mes: cupo, vigilados_max: cupo >= 20 ? 6 : 4 }, { onConflict: "email" });
+    const fila = creditos ? { email, nombre, creditos_mes: cupo } : { email, nombre, busquedas_mes: cupo / 10, vigilados_max: 4 };
+    const { error } = await db.from("invitados").upsert(fila, { onConflict: "email" });
     if (error) return aviso("No se pudo invitar. Revisa el correo.", "error");
     aviso(`Listo. ${nombre} ya puede entrar con ${email}.`);
     const texto = `Hola ${nombre}, te invité a Cazador de Ofertas, la app de la familia para comprar al mejor precio. Ábrela en tu celular, escribe tu correo (${email}) y luego el código de 6 números que te llega por correo: https://msantos4321-bit.github.io/cazador-app/`;
@@ -1382,8 +1473,9 @@ async function pantallaFamilia() {
     activarCompartir();
   };
   document.querySelectorAll(".quitar").forEach((b) => (b.onclick = async () => {
-    if (!confirm(`¿Quitarle el acceso a ${b.dataset.nombre}? Ya no podrá buscar ni vigilar productos nuevos.`)) return;
-    const { error } = await db.from("invitados").delete().eq("email", b.dataset.email);
+    const t = tarjetaDe(b);
+    if (!confirm(`¿Quitarle el acceso a ${t.dataset.nombre}? Ya no podrá buscar ni vigilar productos nuevos.`)) return;
+    const { error } = await db.from("invitados").delete().eq("email", t.dataset.email);
     if (error) return aviso("No se pudo quitar.", "error");
     aviso("Acceso quitado.");
     pantallaFamilia();
@@ -1400,7 +1492,7 @@ async function pantallaAjustes() {
       <h1>Tus datos</h1>
       ${tarjetaUso(uso)}
       <a class="tarjeta enlace-tarjeta" href="#/tallas"><span class="titulo">Tallas</span><span class="suave">Las tuyas y las que te compartió tu familia</span></a>
-      ${uso?.admin ? `<a class="tarjeta enlace-tarjeta" href="#/familia"><span class="titulo">Familia y accesos</span><span class="suave">Quién puede entrar y cuánto ha usado</span></a>` : ""}
+      ${uso?.admin ? `<a class="tarjeta enlace-tarjeta" href="#/familia"><span class="titulo">Familia y accesos</span><span class="suave">Repartir créditos, pausar o invitar</span></a>` : ""}
       <form id="f-nombre" class="tarjeta pila">
         <label for="nombre">¿Cómo te llamas?</label>
         <input id="nombre" value="${esc(perfil?.nombre || "")}" autocomplete="name">
