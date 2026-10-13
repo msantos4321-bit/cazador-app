@@ -194,6 +194,7 @@ async function pantallaHoy() {
     db.from("perfiles").select("nombre").eq("id", usuario.id).single(),
   ]);
   const uso = await leerUso();
+  const casasG = await db.from("casas_guardadas").select("estado,revision");
   if (segs.error) return pintar(`<main><h1>No se pudo cargar</h1><p class="suave">Revisa tu internet y vuelve a abrir.</p><button class="boton principal" onclick="location.reload()">Intentar otra vez</button></main>${barra("hoy")}`);
   const lista = segs.data.map((s) => ({ ...s, v: Array.isArray(s.veredictos) ? s.veredictos[0] : s.veredictos }));
   // Precio más bajo de los últimos 90 días de cada producto
@@ -261,6 +262,13 @@ async function pantallaHoy() {
       ${heroe}
       ${solicitudes}
       ${tarjetas ? `<h2 class="seccion">Lo que vigilo</h2>${tarjetas}` : ""}
+      ${!casasG.error && (casasG.data || []).length ? (() => {
+        const cs = casasG.data, activas = cs.filter((c) => c.estado !== "descartada");
+        const novedades = cs.filter((c) => c.revision && (c.revision.disponible === false || (c.revision.precio_anterior && c.revision.precio !== c.revision.precio_anterior))).length;
+        const visitar = cs.filter((c) => c.estado === "visitar").length;
+        return `<a class="tarjeta enlace-tarjeta casas-enlace" href="#/casas"><span class="titulo">Casas que estoy viendo</span>
+          <span class="suave">${activas.length} ${activas.length === 1 ? "casa" : "casas"}${visitar ? ` · ${visitar} para visitar` : ""}${novedades ? ` · <b>${novedades} con cambios</b>` : ""}</span></a>`;
+      })() : ""}
       ${!tarjetas && !solicitudes ? `<section class="vacio">${ICONO_BOLSA}<p><b>Todavía no vigilas nada.</b></p><p class="suave">Toca <b>Buscar algo</b> y escribe lo que quieres comprar, como lo dirías en voz alta.</p><a class="boton principal" href="#/agregar">Buscar algo</a></section>` : ""}
       <p class="suave pequeno centro">Revisamos los precios solos todos los días.${uso?.invitado ? `<br>Este mes llevas ${uso.mis_busquedas} de ${uso.mi_cupo} búsquedas y vigilas ${uso.mis_vigilados} de ${uso.mi_tope} productos.` : ""}</p>
     </main>${barra("hoy")}`);
@@ -572,8 +580,10 @@ async function pantallaAfinar() {
   }
   const f = flujo;
   const liga = f.categoria.id === "liga";
-  const elegido = (q, o) => f.respuestas[q.clave] === o.valor;
-  const libre = (q) => f.respuestas[q.clave] && !q.opciones.some((o) => o.valor === f.respuestas[q.clave]) ? f.respuestas[q.clave] : "";
+  const esta = (k, v) => Array.isArray(f.respuestas[k]) ? f.respuestas[k].includes(v) : f.respuestas[k] === v;
+  const elegido = (q, o) => esta(q.clave, o.valor);
+  const multiples = new Set(f.preguntas.filter((q) => q.multiple).map((q) => q.clave));
+  const libre = (q) => f.respuestas[q.clave] && !q.multiple && !q.opciones.some((o) => o.valor === f.respuestas[q.clave]) ? f.respuestas[q.clave] : "";
   const preguntas = f.preguntas.map((q) => `
     <section class="pregunta" data-q="${esc(q.clave)}">
       <h2>${esc(q.texto)}</h2>
@@ -668,16 +678,17 @@ async function pantallaAfinar() {
 
   const resumen = document.getElementById("resumen");
   function actualizar() {
-    document.querySelectorAll(".eleccion[data-q]").forEach((b) => b.setAttribute("aria-pressed", String(f.respuestas[b.dataset.q] === b.dataset.v)));
+    document.querySelectorAll(".eleccion[data-q]").forEach((b) => b.setAttribute("aria-pressed", String(esta(b.dataset.q, b.dataset.v))));
     document.querySelectorAll(".persona").forEach((b) => b.setAttribute("aria-pressed", String((f.para || "") === b.dataset.p)));
     const partes = [];
     for (const q of f.preguntas) {
       const v = f.respuestas[q.clave];
-      if (!v) continue;
+      if (!v || (Array.isArray(v) && !v.length)) continue;
+      if (Array.isArray(v)) { partes.push(v.map((x) => (q.opciones.find((o) => o.valor === x)?.etiqueta || x).toLowerCase()).join(", ")); continue; }
       const texto = q.opciones.find((o) => o.valor === v)?.etiqueta || v;
       partes.push(q.clave === "presupuesto" && !q.opciones.some((o) => o.valor === v) ? `hasta ${texto}` : texto);
     }
-    const faltan = f.preguntas.filter((q) => !f.respuestas[q.clave]).length;
+    const faltan = f.preguntas.filter((q) => !q.multiple && !f.respuestas[q.clave]).length;
     partes.push(f.para ? `para ${f.para.replace(/^Mi /, "tu ")}` : "para ti");
     resumen.innerHTML = `<b>${esc(partes.join(", "))}</b>${faltan ? `<span> · ${faltan === 1 ? "1 pregunta la decido yo" : `${faltan} preguntas las decido yo`}</span>` : ""}`;
     guardarBorrador();
@@ -685,7 +696,11 @@ async function pantallaAfinar() {
 
   document.querySelectorAll(".eleccion[data-q]").forEach((b) => (b.onclick = () => {
     const k = b.dataset.q;
-    if (f.respuestas[k] === b.dataset.v) { delete f.respuestas[k]; f.elegidas.delete(k); }
+    if (multiples.has(k)) {
+      const lista = Array.isArray(f.respuestas[k]) ? f.respuestas[k] : [];
+      f.respuestas[k] = lista.includes(b.dataset.v) ? lista.filter((x) => x !== b.dataset.v) : [...lista, b.dataset.v];
+      f.elegidas.add(k);
+    } else if (f.respuestas[k] === b.dataset.v) { delete f.respuestas[k]; f.elegidas.delete(k); }
     else { f.respuestas[k] = b.dataset.v; f.elegidas.add(k); }
     const libreInput = document.querySelector(`.respuesta-libre[data-q="${k}"]`);
     if (libreInput) libreInput.value = "";
@@ -714,7 +729,8 @@ async function pantallaAfinar() {
       categoria: f.categoria.id,
       respuestas,
       para: f.para || null,
-      lado: respuestas.lado || { tj: "mx", bc: "mx", sd: "us" }[respuestas.zona] || "ambos",
+      lado: respuestas.lado || { tj: "mx", bc: "mx", sd: "us" }[respuestas.zona]
+        || (f.categoria.id === "casa" ? (/san diego|chula|estados unidos/i.test(`${respuestas.ciudad || ""} ${f.texto}`) ? "us" : "mx") : "ambos"),
     };
     const { data, error } = await db.from("solicitudes").insert(fila).select("id").single();
     if (error) { buscar.disabled = false; buscar.textContent = "Buscar mis opciones"; return aviso(mensajeBase(error, "No se pudo mandar. Revisa tu internet."), "error"); }
@@ -723,13 +739,307 @@ async function pantallaAfinar() {
   };
 }
 
+// ---------- casas y departamentos ----------
+const SEMAFORO_CASA = {
+  barato: { clase: "verde", texto: "Buen precio para la zona" },
+  normal: { clase: "amarillo", texto: "Precio normal" },
+  caro: { clase: "rojo", texto: "Arriba de la zona" },
+};
+const ESTADOS_CASA = [
+  { v: "me_interesa", t: "Me interesa" }, { v: "visitar", t: "Para visitar" },
+  { v: "visitada", t: "Ya la vi" }, { v: "descartada", t: "Descartada" },
+];
+const insigniaCasa = (s) => { const x = SEMAFORO_CASA[s] || SEMAFORO_CASA.normal; return `<span class="insignia ${x.clase}">${x.texto}</span>`; };
+function precioCasa(a) {
+  const mes = a.operacion === "renta" || /renta/i.test(a.operacion_texto || "") ? " al mes" : "";
+  if ((a.moneda || "").toUpperCase() === "USD") return `${"US$" + Math.round(a.precio).toLocaleString("en-US")}${mes}${a.precio_mxn ? ` <span class="suave">≈ ${pesos(a.precio_mxn)}</span>` : ""}`;
+  return `${pesos(a.precio)}${mes}`;
+}
+function rasgosCasa(a) {
+  const r = [
+    a.recamaras ? `${a.recamaras} rec.` : "", a.banos ? `${a.banos} ${a.banos === 1 ? "baño" : "baños"}` : "",
+    a.m2_construccion ? `${Math.round(a.m2_construccion)} m²` : a.m2_terreno ? `${Math.round(a.m2_terreno)} m² de terreno` : "",
+    a.estacionamientos ? `${a.estacionamientos} ${a.estacionamientos === 1 ? "auto" : "autos"}` : "",
+  ].filter(Boolean);
+  return r.length ? `<div class="rasgos">${r.map((x) => `<span>${esc(x)}</span>`).join("")}</div>` : "";
+}
+const TEXTO_FRAUDE = `<details class="tarjeta desplegable"><summary><span class="titulo">Cómo evitar fraudes en rentas</span></summary>
+  <ul class="lista-simple">
+    <li>Nunca deposites ni transfieras antes de ver la casa por dentro y conocer al dueño o agente.</li>
+    <li>Desconfía si la renta está muy por debajo de la zona, si “el dueño está fuera del país” o si te apuran.</li>
+    <li>Pide ver una identificación y un comprobante de que es dueño (escrituras o predial a su nombre).</li>
+    <li>Si es inmobiliaria, verifica su oficina, su RFC y si pertenece a una asociación (AMPI).</li>
+    <li>Firma un contrato por escrito y paga con transferencia a nombre del dueño o de la inmobiliaria, nunca en una tienda.</li>
+  </ul></details>`;
+const TEXTO_VISITA = `<details class="tarjeta desplegable"><summary><span class="titulo">Qué revisar cuando la visites</span></summary>
+  <ul class="lista-simple">
+    <li>Humedad o manchas en techos y paredes, sobre todo en temporada de lluvias.</li>
+    <li>Presión del agua y si hay tinaco o cisterna; prueba regaderas y llaves.</li>
+    <li>Luz natural, ruido de la calle y señal de celular.</li>
+    <li>Que puertas y ventanas cierren bien; estado del boiler y de los minisplits.</li>
+    <li>Para comprar: escrituras, predial y agua al corriente, y que no tenga adeudos ni gravámenes.</li>
+    <li>Para rentar: qué incluye la renta, depósito, si piden aval o póliza, y quién paga reparaciones.</li>
+  </ul></details>`;
+
+async function pantallaCasasResultado(s) {
+  const op = s.opciones || {};
+  const zona = op.zona || {};
+  const anuncios = op.anuncios || [];
+  const { data: ya } = await db.from("casas_guardadas").select("url");
+  const guardadas = new Set((ya || []).map((x) => x.url));
+  const r = s.respuestas || {};
+  const titulo = `${r.operacion === "venta" ? "Para comprar" : r.operacion === "renta" ? "En renta" : "Casas y departamentos"}${r.ciudad ? ` · ${r.ciudad}` : ""}`;
+  const colonias = (zona.colonias || []).slice(0, 8);
+  const maxRango = Math.max(...colonias.map((c) => (c.rango_mxn || [0, c.precio_tipico_mxn || 0])[1] || c.precio_tipico_mxn || 0), 1);
+  const filaColonia = (c) => {
+    const [lo, hi] = c.rango_mxn || [c.precio_tipico_mxn, c.precio_tipico_mxn];
+    const izq = (lo / maxRango) * 100, ancho = Math.max(2, ((hi - lo) / maxRango) * 100), punto = (c.precio_tipico_mxn / maxRango) * 100;
+    return `<li class="colonia">
+      <div class="colonia-cabeza"><b>${esc(c.colonia)}</b><span>${pesos(c.precio_tipico_mxn)}</span></div>
+      <div class="rango" aria-hidden="true"><i style="left:${izq}%;width:${ancho}%"></i><b style="left:${punto}%"></b></div>
+      <div class="suave pequeno">${lo && hi ? `De ${pesos(lo)} a ${pesos(hi)}` : ""}${c.anuncios ? ` · ${c.anuncios} anuncios` : ""}${c.comentario ? ` · ${esc(c.comentario)}` : ""}</div>
+    </li>`;
+  };
+  const tarjeta = (a, i) => `
+    <article class="tarjeta casa ${a.recomendado ? "destacada" : ""}" data-sem="${esc(a.semaforo)}" data-i="${i}">
+      <a class="casa-foto" href="${esc(a.url)}" target="_blank" rel="noopener">
+        ${a.imagen ? `<img src="${esc(a.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="sin-foto">Sin foto</span>`}
+        <span class="sobre-foto">${insigniaCasa(a.semaforo)}</span>
+      </a>
+      ${a.recomendado ? `<span class="ceja">Recomendada</span>` : ""}
+      <p class="precio-grande">${precioCasa(a)}</p>
+      ${rasgosCasa(a)}
+      <p class="suave pequeno">${esc([a.colonia, a.ciudad].filter(Boolean).join(", "))}${a.portal ? ` · en ${esc(a.portal)}` : ""}${a.precio_m2_mxn ? ` · ${pesos(a.precio_m2_mxn)} por m²` : ""}</p>
+      ${a.por_que ? `<p>${esc(a.por_que)}</p>` : ""}
+      ${(a.alertas || []).length ? `<ul class="alertas">${a.alertas.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      <div class="fila-botones">
+        <button class="boton chico guardar-casa ${guardadas.has(a.url) ? "guardada" : ""}" data-i="${i}" aria-pressed="${guardadas.has(a.url)}">${guardadas.has(a.url) ? "♥ Guardada" : "♡ Guardar"}</button>
+        <a class="boton chico" href="${esc(a.url)}" target="_blank" rel="noopener">Ver anuncio ↗</a>
+      </div>
+      ${compartirBoton(`Mira esta ${a.tipo ? a.tipo.toLowerCase() : "casa"}: ${a.titulo} · ${a.moneda === "USD" ? "US$" + a.precio : pesos(a.precio)}${a.colonia ? ` en ${a.colonia}` : ""}`, a.url)}
+    </article>`;
+  const cuenta = (sem) => anuncios.filter((a) => a.semaforo === sem).length;
+
+  pintar(`
+    <main>
+      <a class="volver" href="#/hoy">‹ Mi lista</a>
+      <p class="ceja">${esc(titulo)}</p>
+      <h1>“${esc(s.texto)}”</h1>
+      ${s.nota ? `<p class="nota">${esc(s.nota)}</p>` : ""}
+      ${zona.resumen || colonias.length ? `
+      <section class="tarjeta pila zona">
+        <span class="titulo">Así está la zona</span>
+        ${zona.resumen ? `<p class="zona-resumen">${esc(zona.resumen)}</p>` : ""}
+        ${colonias.length ? `<ul class="colonias">${colonias.map(filaColonia).join("")}</ul>` : ""}
+        <p class="suave pequeno">${zona.fuentes?.length ? `Con anuncios de ${esc(zona.fuentes.join(", "))}. ` : ""}Precios en pesos${zona.tipo_cambio ? ` (dólar a ${zona.tipo_cambio})` : ""}.</p>
+      </section>` : ""}
+      ${anuncios.length ? `
+      <h2 class="seccion">Los mejores anuncios</h2>
+      <div class="chips filtros-casa" role="group" aria-label="Mostrar">
+        <button class="chip activo" data-f="todas">Todas (${anuncios.length})</button>
+        ${cuenta("barato") ? `<button class="chip" data-f="barato">Buen precio (${cuenta("barato")})</button>` : ""}
+        ${cuenta("normal") ? `<button class="chip" data-f="normal">Normal (${cuenta("normal")})</button>` : ""}
+      </div>
+      <div id="anuncios" class="pila">${anuncios.map(tarjeta).join("")}</div>` : `<p class="suave">No encontré anuncios que cumplan todo esta vez.</p>`}
+      <section class="tarjeta pila">
+        <span class="titulo">¿Quieres verlo de otra forma?</span>
+        <p class="suave">Busco otra vez con tus mismas respuestas. Llega en unos 15 minutos.</p>
+        <button class="boton refinar" data-r="mas_baratas">Más baratas</button>
+        <button class="boton refinar" data-r="otras_colonias">Otras colonias</button>
+        <button class="boton refinar" data-r="mas_grandes">Más grandes</button>
+      </section>
+      ${r.operacion === "venta" ? "" : TEXTO_FRAUDE}
+      ${TEXTO_VISITA}
+      <a class="boton" href="#/casas">Ver las casas que guardé</a>
+    </main>${barra("")}`);
+  activarCompartir();
+  document.querySelectorAll(".filtros-casa .chip").forEach((c) => (c.onclick = () => {
+    document.querySelectorAll(".filtros-casa .chip").forEach((x) => x.classList.toggle("activo", x === c));
+    document.querySelectorAll("#anuncios .casa").forEach((t) => (t.hidden = c.dataset.f !== "todas" && t.dataset.sem !== c.dataset.f));
+  }));
+  document.querySelectorAll(".guardar-casa").forEach((b) => (b.onclick = async () => {
+    const a = anuncios[Number(b.dataset.i)];
+    b.disabled = true;
+    if (b.classList.contains("guardada")) {
+      const { error } = await db.from("casas_guardadas").delete().eq("url", a.url);
+      if (error) { b.disabled = false; return aviso("No se pudo quitar.", "error"); }
+      b.classList.remove("guardada"); b.textContent = "♡ Guardar"; b.setAttribute("aria-pressed", "false");
+    } else {
+      const datos = { ...a, operacion: a.operacion || r.operacion };
+      const { error } = await db.from("casas_guardadas").upsert({ usuario: usuario.id, url: a.url, solicitud_id: s.id, datos }, { onConflict: "usuario,url" });
+      if (error) { b.disabled = false; return aviso(mensajeBase(error, "No se pudo guardar. ¿Ya está activada la lista de casas?"), "error"); }
+      b.classList.add("guardada"); b.textContent = "♥ Guardada"; b.setAttribute("aria-pressed", "true");
+      aviso("Guardada en “Casas que estoy viendo”.");
+    }
+    b.disabled = false;
+    if (navigator.vibrate) navigator.vibrate(10);
+  }));
+  document.querySelectorAll(".refinar").forEach((b) => (b.onclick = async () => {
+    const etiqueta = { mas_baratas: "más baratas", otras_colonias: "otras colonias", mas_grandes: "más grandes" }[b.dataset.r];
+    b.disabled = true; b.textContent = "Buscando…";
+    const { data, error } = await db.from("solicitudes").insert({
+      texto: `${s.texto} · ${etiqueta}`, categoria: s.categoria, para: s.para, lado: s.lado,
+      respuestas: { ...(s.respuestas || {}), refinar: b.dataset.r, antes: s.id },
+    }).select("id").single();
+    if (error) { b.disabled = false; b.textContent = "Intentar otra vez"; return aviso(mensajeBase(error, "No se pudo."), "error"); }
+    location.hash = `#/solicitud/${data.id}`;
+  }));
+}
+
+function mensualidad(precio, enganchePct, tasaAnual, anios) {
+  const p = precio * (1 - enganchePct / 100), r = tasaAnual / 100 / 12, n = anios * 12;
+  return r ? (p * r) / (1 - Math.pow(1 + r, -n)) : p / n;
+}
+
+async function pantallaCasas() {
+  pintar(esqueleto("Casas que estoy viendo", 3) + barra("casas"));
+  const { data, error } = await db.from("casas_guardadas").select("*").order("creado", { ascending: false });
+  if (error) return pintar(`<main><a class="volver" href="#/hoy">‹ Mi lista</a><h1>Casas que estoy viendo</h1><p class="nota">Esta parte todavía no está activada. Mauricio la activa en unos minutos.</p></main>${barra("casas")}`);
+  let filtro = "todas";
+  try { filtro = sessionStorage.getItem("filtro-casas") || "todas"; } catch {}
+  const casas = data || [];
+  const contar = (v) => casas.filter((c) => c.estado === v).length;
+  const tarjeta = (c) => {
+    const a = c.datos || {};
+    const rev = c.revision || {};
+    const cambio = rev.disponible === false ? `<span class="insignia rojo">Ya no aparece en el portal</span>`
+      : rev.precio && rev.precio_anterior && rev.precio < rev.precio_anterior ? `<span class="insignia verde">Bajó a ${a.moneda === "USD" ? "US$" + rev.precio : pesos(rev.precio)}</span>`
+      : rev.precio && rev.precio_anterior && rev.precio > rev.precio_anterior ? `<span class="insignia amarillo">Subió a ${a.moneda === "USD" ? "US$" + rev.precio : pesos(rev.precio)}</span>` : "";
+    const venta = a.operacion === "venta";
+    return `<article class="tarjeta casa guardada-casa" data-id="${c.id}" data-estado="${c.estado}">
+      <div class="casa-fila">
+        <a class="casa-mini" href="${esc(c.url)}" target="_blank" rel="noopener">${a.imagen ? `<img src="${esc(a.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}</a>
+        <div class="producto-info">
+          <span class="titulo dos-lineas">${esc(a.titulo || "Casa")}</span>
+          <span class="precio-linea">${a.precio ? precioCasa(a) : ""}</span>
+          ${a.semaforo ? insigniaCasa(a.semaforo) : ""} ${cambio}
+          <span class="suave pequeno">${esc([a.colonia, a.ciudad].filter(Boolean).join(", "))}</span>
+        </div>
+      </div>
+      ${rasgosCasa(a)}
+      <div class="estados" role="radiogroup" aria-label="Cómo va">
+        ${ESTADOS_CASA.map((e) => `<button class="estado-casa" role="radio" data-v="${e.v}" aria-checked="${c.estado === e.v}">${e.t}</button>`).join("")}
+      </div>
+      <label class="pequeno" for="nota-${c.id}">Mis notas</label>
+      <textarea id="nota-${c.id}" class="nota-casa" rows="2" placeholder="Ej. le falta luz, el dueño acepta mascotas, visitar el sábado">${esc(c.nota || "")}</textarea>
+      ${venta && a.precio ? `<details class="calculadora"><summary>Calcular mensualidad de crédito</summary>
+        <div class="calc" data-precio="${a.precio_mxn || a.precio}">
+          <label>Enganche <span><input type="number" class="c-eng" value="10" min="0" max="90"> %</span></label>
+          <label>Tasa anual <span><input type="number" class="c-tasa" value="11" step="0.1"> %</span></label>
+          <label>Años <span><input type="number" class="c-anios" value="20" min="1" max="30"></span></label>
+          <p class="c-res precio-linea"></p>
+          <p class="suave pequeno">Estimación sin seguros ni comisiones. Pide la tasa real a tu banco o a Infonavit.</p>
+        </div></details>` : ""}
+      <div class="fila-botones">
+        <a class="boton chico" href="${esc(c.url)}" target="_blank" rel="noopener">Ver anuncio ↗</a>
+        ${compartirBoton(`Mira esta casa: ${a.titulo || ""} · ${a.moneda === "USD" ? "US$" + a.precio : pesos(a.precio)}`, c.url)}
+      </div>
+      <div class="fila-acciones">
+        <label class="comparar"><input type="checkbox" class="cmp-casa" value="${c.id}"> Comparar</label>
+        <button class="enlace-quitar quitar-casa">Quitar de la lista</button>
+      </div>
+      ${rev.fecha ? `<p class="suave pequeno">Revisada el ${new Date(rev.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "long" })}.</p>` : ""}
+    </article>`;
+  };
+  pintar(`
+    <main>
+      <a class="volver" href="#/hoy">‹ Mi lista</a>
+      <h1>Casas que estoy viendo</h1>
+      <p class="suave">Las casas que guardaste de tus búsquedas. Cada semana reviso si siguen anunciadas y si cambió el precio.</p>
+      ${casas.length ? `
+      <div class="chips filtros-casa" role="group" aria-label="Mostrar">
+        <button class="chip" data-f="todas">Todas (${casas.length})</button>
+        ${ESTADOS_CASA.map((e) => contar(e.v) ? `<button class="chip" data-f="${e.v}">${e.t} (${contar(e.v)})</button>` : "").join("")}
+      </div>
+      <div id="lista-casas" class="pila">${casas.map(tarjeta).join("")}</div>
+      <div id="comparacion"></div>` : `
+      <section class="vacio">${ICONO_BOLSA}<p><b>Todavía no guardas ninguna casa.</b></p><p class="suave">Busca una casa o departamento y toca <b>♡ Guardar</b> en las que te gusten.</p><a class="boton principal" href="#/agregar">Buscar casa</a></section>`}
+      ${TEXTO_VISITA}
+      ${TEXTO_FRAUDE}
+    </main>
+    <div class="barra-comparar" id="barra-cmp" hidden><span id="cmp-n"></span><button class="boton principal chico" id="ver-cmp">Ver lado a lado</button></div>
+    ${barra("casas")}`);
+  activarCompartir();
+  const aplicarFiltro = (f) => {
+    filtro = f;
+    try { sessionStorage.setItem("filtro-casas", f); } catch {}
+    document.querySelectorAll(".filtros-casa .chip").forEach((x) => x.classList.toggle("activo", x.dataset.f === f));
+    document.querySelectorAll(".guardada-casa").forEach((t) => (t.hidden = f !== "todas" && t.dataset.estado !== f));
+  };
+  document.querySelectorAll(".filtros-casa .chip").forEach((c) => (c.onclick = () => aplicarFiltro(c.dataset.f)));
+  aplicarFiltro(document.querySelector(`.filtros-casa .chip[data-f="${filtro}"]`) ? filtro : "todas");
+  const porId = (el) => casas.find((c) => String(c.id) === el.closest(".guardada-casa").dataset.id);
+  document.querySelectorAll(".estado-casa").forEach((b) => (b.onclick = async () => {
+    const c = porId(b), tarjetaEl = b.closest(".guardada-casa");
+    const { error } = await db.from("casas_guardadas").update({ estado: b.dataset.v, actualizado: new Date().toISOString() }).eq("id", c.id);
+    if (error) return aviso("No se pudo cambiar.", "error");
+    c.estado = b.dataset.v; tarjetaEl.dataset.estado = b.dataset.v;
+    tarjetaEl.querySelectorAll(".estado-casa").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+    if (navigator.vibrate) navigator.vibrate(8);
+  }));
+  document.querySelectorAll(".nota-casa").forEach((t) => (t.onchange = async () => {
+    const c = porId(t);
+    const { error } = await db.from("casas_guardadas").update({ nota: t.value.trim() || null }).eq("id", c.id);
+    aviso(error ? "No se pudo guardar la nota." : "Nota guardada.", error ? "error" : "");
+  }));
+  document.querySelectorAll(".quitar-casa").forEach((b) => (b.onclick = async () => {
+    const c = porId(b);
+    const { error } = await db.from("casas_guardadas").delete().eq("id", c.id);
+    if (error) return aviso("No se pudo quitar.", "error");
+    aviso("Quitada de tu lista.");
+    pantallaCasas();
+  }));
+  document.querySelectorAll(".calc").forEach((cal) => {
+    const calc = () => {
+      const m = mensualidad(Number(cal.dataset.precio), Number(cal.querySelector(".c-eng").value), Number(cal.querySelector(".c-tasa").value), Number(cal.querySelector(".c-anios").value));
+      cal.querySelector(".c-res").textContent = isFinite(m) ? `≈ ${pesos(m)} al mes` : "";
+    };
+    cal.querySelectorAll("input").forEach((i) => (i.oninput = calc));
+    calc();
+  });
+  // Comparar casas guardadas
+  const marcas = [...document.querySelectorAll(".cmp-casa")];
+  const barraC = document.getElementById("barra-cmp");
+  const elegidas = () => marcas.filter((m) => m.checked).map((m) => casas.find((c) => String(c.id) === m.value));
+  marcas.forEach((m) => (m.onchange = () => {
+    if (elegidas().length > 3) { m.checked = false; return aviso("Puedes comparar hasta 3 a la vez."); }
+    m.closest(".tarjeta").classList.toggle("marcada", m.checked);
+    const k = elegidas().length;
+    barraC.hidden = k < 2;
+    document.getElementById("cmp-n").textContent = `${k} elegidas`;
+  }));
+  const ver = document.getElementById("ver-cmp");
+  if (ver) ver.onclick = () => {
+    const cs = elegidas().map((c) => ({ ...c.datos, nota: c.nota }));
+    const fila = (t, f) => `<tr><th scope="row">${t}</th>${cs.map((a) => `<td>${f(a)}</td>`).join("")}</tr>`;
+    const minimo = Math.min(...cs.map((a) => a.precio_mxn || a.precio || Infinity));
+    document.getElementById("comparacion").innerHTML = `<section class="tarjeta pila" id="tabla-cmp" tabindex="-1">
+      <span class="titulo">Lado a lado</span>
+      <div class="tabla-desliza"><table class="comparar-tabla">
+        <thead><tr><th></th>${cs.map((a) => `<th scope="col">${foto(a.imagen)}<span>${esc(a.colonia || a.titulo || "")}</span></th>`).join("")}</tr></thead>
+        <tbody>
+          ${fila("Precio", (a) => `${precioCasa(a)}${(a.precio_mxn || a.precio) === minimo ? `<br><span class="insignia verde">La más barata</span>` : ""}`)}
+          ${fila("Por m²", (a) => (a.precio_m2_mxn ? pesos(a.precio_m2_mxn) : "—"))}
+          ${fila("Recámaras", (a) => a.recamaras || "—")}
+          ${fila("Baños", (a) => a.banos || "—")}
+          ${fila("Tamaño", (a) => (a.m2_construccion ? `${Math.round(a.m2_construccion)} m²` : "—"))}
+          ${fila("Para la zona", (a) => (a.semaforo ? insigniaCasa(a.semaforo) : "—"))}
+          ${fila("Mis notas", (a) => `<span class="pequeno">${esc(a.nota || "—")}</span>`)}
+        </tbody></table></div></section>`;
+    barraC.hidden = true;
+    const t = document.getElementById("tabla-cmp"); t.scrollIntoView({ behavior: "smooth", block: "start" }); t.focus({ preventScroll: true });
+  };
+}
+
 // ---------- opciones de una búsqueda ----------
 async function pantallaSolicitud(id) {
   const { data: s, error } = await db.from("solicitudes").select("*").eq("id", id).single();
   if (error || !s) return pintar(`<main><a class="volver" href="#/hoy">‹ Mi lista</a><h1>No encontré esta búsqueda</h1></main>`);
 
+  const esCasa = s.categoria === "casa";
+  if (esCasa && s.opciones && !Array.isArray(s.opciones) && s.opciones.tipo === "inmuebles") return pantallaCasasResultado(s);
   if (s.estado === "pendiente" || s.estado === "buscando") {
-    const conocidos = await yaVigilados(s.texto, s.categoria);
+    const conocidos = esCasa ? "" : await yaVigilados(s.texto, s.categoria);
     pintar(`
       <main>
         <a class="volver" href="#/hoy">‹ Mi lista</a>
@@ -737,7 +1047,7 @@ async function pantallaSolicitud(id) {
         <h1>Listo, ya estoy buscando tus mejores opciones</h1>
         <section class="tarjeta">
           <span class="titulo">“${esc(s.texto)}”</span>
-          <p class="suave">Reviso modelos, precios en México y Estados Unidos, y si el descuento es real. ${cuandoLlega(s.creado)}; te aviso por Telegram. Puedes cerrar la app.</p>
+          <p class="suave">${esCasa ? "Reviso anuncios en Vivanuncios, Mercado Libre, Lamudi y más, comparo precios por colonia y aparto los sospechosos." : "Reviso modelos, precios en México y Estados Unidos, y si el descuento es real."} ${cuandoLlega(s.creado)}; te aviso por Telegram. Puedes cerrar la app.</p>
         </section>
         ${conocidos}
         <a class="boton principal" href="#/hoy">Volver a mi lista</a>
@@ -911,6 +1221,7 @@ function mensajeBase(error, siNo = "No se pudo guardar. Revisa tu internet.") {
   if (m.includes("CUPO_PERSONA")) return `Ya usaste tus ${n} búsquedas de este mes. El día 1 se renuevan.`;
   if (m.includes("CUPO_FAMILIA")) return `La familia ya usó las ${n} búsquedas de este mes. El día 1 se renuevan.`;
   if (m.includes("TOPE_PERSONA")) return `Ya vigilas ${n} productos, tu máximo. Deja de vigilar uno para agregar este.`;
+  if (m.includes("TOPE_CASAS")) return `Ya guardaste ${n} casas, el máximo. Quita alguna que ya no te interese.`;
   if (m.includes("TOPE_FAMILIA")) return `La familia ya vigila ${n} productos, el máximo. Pide que dejen de vigilar alguno.`;
   return siNo;
 }
@@ -1148,6 +1459,7 @@ async function enrutar() {
   if (ruta === "solicitud" && id) return pantallaSolicitud(id);
   if (ruta === "ajustes") return pantallaAjustes();
   if (ruta === "tallas") return pantallaTallas();
+  if (ruta === "casas") return pantallaCasas();
   if (ruta === "familia") return pantallaFamilia();
   return pantallaHoy();
 }

@@ -67,6 +67,8 @@ const MARCAS_AUTO = ["toyota", "honda", "nissan", "ford", "chevrolet", "chevy", 
   "dodge", "gmc", "volkswagen", "vw", "bmw", "mercedes", "audi", "tesla", "subaru", "lexus", "acura", "infiniti",
   "mitsubishi", "buick", "cadillac", "chrysler", "volvo", "seat", "suzuki", "mg"];
 
+const CIUDADES_FRONTERA = ["tijuana", "rosarito", "tecate", "ensenada", "mexicali", "san diego", "chula vista", "otay"];
+
 export const CATEGORIAS = [
   {
     id: "auto",
@@ -145,7 +147,7 @@ export const CATEGORIAS = [
       "escritorio", "silla", "mesa", "librero", "closet", "cajonera", "buro", "buró", "cocina", "sarten", "sartén",
       "olla", "cuchillo", "vajilla", "licuadora", "cafetera", "freidora", "batidora", "tostador", "cortina", "tapete",
       "alfombra", "lampara", "lámpara", "decoracion", "decoración", "edredon", "edredón", "sabana", "sábana", "toalla",
-      "jardin", "jardín", "asador", "parrilla", "herramienta", "taladro", "hogar", "casa$"],
+      "jardin", "jardín", "asador", "parrilla", "herramienta", "taladro", "hogar"],
     preguntas: (texto) => !tiene(texto, MUEBLES) ? [] : [
       {
         clave: "cuarto",
@@ -326,6 +328,79 @@ export const CATEGORIAS = [
       ],
     }],
   },
+  {
+    id: "casa",
+    nombre: "Casas y departamentos",
+    palabras: ["casa$", "casas$", "departamento", "depa$", "depto", "recamara$", "recamaras$", "terreno", "inmueble",
+      "bienes raices", "renta de casa", "rentar", "en renta", "en venta", "townhouse", "condominio"],
+    preguntas: (texto) => {
+      const t = quitarAcentos(texto.toLowerCase());
+      const ciudad = CIUDADES_FRONTERA.find((c) => t.includes(c));
+      return [
+        /\b(renta|rentar|alquiler)\b/.test(t) || /\b(venta|comprar|compra)\b/.test(t) ? null : {
+          clave: "operacion",
+          texto: "¿Quieres rentar o comprar?",
+          opciones: [{ valor: "renta", etiqueta: "Rentar" }, { valor: "venta", etiqueta: "Comprar" }],
+        },
+        /\b(casa|departamento|depa|depto|terreno|townhouse)\b/.test(t) && !/\bcasa o\b/.test(t) ? null : {
+          clave: "tipo",
+          texto: "¿Qué tipo de vivienda?",
+          opciones: [
+            { valor: "casa", etiqueta: "Casa" }, { valor: "departamento", etiqueta: "Departamento" },
+            { valor: "terreno", etiqueta: "Terreno" }, { valor: "cualquiera", etiqueta: "Me da igual" },
+          ],
+        },
+        ciudad ? null : {
+          clave: "ciudad",
+          tipo: "texto",
+          texto: "¿En qué ciudad?",
+          placeholder: "Otra: estado y ciudad, ej. Jalisco, Guadalajara",
+          opciones: [
+            { valor: "Tijuana", etiqueta: "Tijuana" }, { valor: "Rosarito", etiqueta: "Rosarito" },
+            { valor: "Tecate", etiqueta: "Tecate" }, { valor: "Ensenada", etiqueta: "Ensenada" },
+            { valor: "Mexicali", etiqueta: "Mexicali" }, { valor: "San Diego y Chula Vista", etiqueta: "San Diego / Chula Vista" },
+          ],
+        },
+        {
+          clave: "colonias",
+          tipo: "texto",
+          texto: "¿Alguna colonia o zona en especial?",
+          placeholder: "Ej. Playas, Otay, Chapultepec, Zona Río",
+          opciones: [{ valor: "recomiendame", etiqueta: "Recomiéndame zonas", ayuda: "Te digo dónde rinde más tu dinero" }],
+        },
+        {
+          clave: "recamaras",
+          texto: "¿Cuántas recámaras como mínimo?",
+          opciones: [{ valor: "1", etiqueta: "1 recámara" }, { valor: "2", etiqueta: "2 recámaras" }, { valor: "3", etiqueta: "3 recámaras" }, { valor: "4", etiqueta: "4 o más" }],
+        },
+        {
+          clave: "presupuesto",
+          tipo: "texto",
+          texto: "¿Cuánto quieres pagar como máximo?",
+          placeholder: "Ej. 15,000 al mes, o 3 millones",
+          opciones: [],
+        },
+        {
+          clave: "indispensable",
+          multiple: true,
+          texto: "¿Qué es indispensable? (puedes elegir varias)",
+          opciones: [
+            { valor: "estacionamiento", etiqueta: "Estacionamiento" }, { valor: "mascotas", etiqueta: "Que acepten mascotas" },
+            { valor: "privada", etiqueta: "Privada o con vigilancia" }, { valor: "sin_escaleras", etiqueta: "Sin escaleras" },
+            { valor: "patio", etiqueta: "Patio o jardín" }, { valor: "amueblado", etiqueta: "Amueblado" },
+            { valor: "cerca_garita", etiqueta: "Cerca de la garita" }, { valor: "vista_mar", etiqueta: "Vista al mar" },
+          ],
+        },
+        {
+          clave: "cerca_de",
+          tipo: "texto",
+          texto: "¿Necesitas estar cerca de algo?",
+          placeholder: "Ej. mi trabajo en Otay, la escuela de los niños",
+          opciones: [{ valor: "no", etiqueta: "No importa" }],
+        },
+      ];
+    },
+  },
 ];
 
 export const GENERAL = { id: "otro", nombre: "Otro", palabras: [], preguntas: () => [] };
@@ -350,7 +425,7 @@ const MONTO = {
 };
 
 export function preguntasPara(categoria, texto) {
-  if (categoria.id === "auto") return categoria.preguntas(texto).filter(Boolean);  // trae su propio presupuesto y zona
+  if (categoria.id === "auto" || categoria.id === "casa") return categoria.preguntas(texto).filter(Boolean);  // traen su propio presupuesto y zona
   return [...categoria.preguntas(texto).filter(Boolean), PRESUPUESTO, MONTO, LADO, tiendaFavorita(categoria)];
 }
 
@@ -364,6 +439,7 @@ export const INICIOS = [
   { texto: "Mueble para la casa", etiqueta: "Muebles y hogar" },
   { texto: "Ropa", etiqueta: "Ropa y calzado" },
   { texto: "Auto usado", etiqueta: "Auto" },
+  { texto: "Casa o departamento", etiqueta: "Casa o depa" },
 ];
 
 // ---------- entender lo que escribió o dictó ----------
@@ -416,8 +492,8 @@ export function entender(texto, categoria) {
   const pp = t.match(/\bpara (?:mi |el |la )?(papa|mama|hijo|hija|esposa|esposo|nieto|nieta|abuela|abuelo|suegra|suegro|hermano|hermana|novia|novio)\b/);
   if (pp) { para = PERSONAS[pp[1]]; etiquetas.push(`Para ${para.toLowerCase()}`); }
 
-  if (/\b(en|de) (mexico|tijuana|mx)\b/.test(t) && categoria.id !== "auto") pon("lado", "mx", "En México");
-  else if (/(estados unidos|\beeuu\b|\bee ?uu\b|\busa\b|san diego|del otro lado|chula vista)/.test(t) && categoria.id !== "auto") pon("lado", "us", "En Estados Unidos");
+  if (/\b(en|de) (mexico|tijuana|mx)\b/.test(t) && !["auto", "casa"].includes(categoria.id)) pon("lado", "mx", "En México");
+  else if (/(estados unidos|\beeuu\b|\bee ?uu\b|\busa\b|san diego|del otro lado|chula vista)/.test(t) && !["auto", "casa"].includes(categoria.id)) pon("lado", "us", "En Estados Unidos");
 
   if (/\b(barat[oa]s?|economic[oa]s?)\b/.test(t)) pon("nivel", "economica", "Que sea barata");
   else if (/\b(la mejor|el mejor|de las mejores|gama alta|premium)\b/.test(t)) pon("nivel", "mejor", "La mejor");
@@ -448,6 +524,21 @@ export function entender(texto, categoria) {
       [/mexicali|ensenada/, "zona", "bc", "Baja California"], [/san diego/, "zona", "sd", "San Diego"]],
   };
   for (const [re, clave, valor, etiqueta] of reglas[categoria.id] || []) if (!(clave in r) && re.test(t)) pon(clave, valor, etiqueta);
+  if (categoria.id === "casa") {
+    if (/\b(renta|rentar|alquiler)\b/.test(t)) pon("operacion", "renta", "En renta");
+    else if (/\b(venta|comprar|compra)\b/.test(t)) pon("operacion", "venta", "Para comprar");
+    const tipo = /\b(casa|departamento|depa|depto) o\b/.test(t) ? null : t.match(/\b(casa|departamento|depa|depto|terreno)\b/);
+    if (tipo) { const v = { depa: "departamento", depto: "departamento" }[tipo[1]] || tipo[1]; pon("tipo", v, v.charAt(0).toUpperCase() + v.slice(1)); }
+    const ciudad = CIUDADES_FRONTERA.find((c) => t.includes(c));
+    if (ciudad) { const n = { "san diego": "San Diego y Chula Vista", "chula vista": "San Diego y Chula Vista", otay: "Tijuana" }[ciudad] || ciudad.charAt(0).toUpperCase() + ciudad.slice(1); r.ciudad = n; etiquetas.push(n); }
+    const rec = t.match(/(\d)\s*(?:recamaras?|cuartos|habitaciones)/);
+    if (rec) pon("recamaras", Number(rec[1]) >= 4 ? "4" : rec[1], `${rec[1]} recámaras`);
+    const m = t.match(/\b(?:menos de|hasta|maximo|no mas de|de unos|como)\s*\$?\s*([\d.,]+)\s*(millones|millon|mil|k)?/);
+    if (m) {
+      let n = Number(m[1].replace(/,/g, "")); if (m[2] === "mil" || m[2] === "k") n *= 1000; if (m[2] && m[2].startsWith("millon")) n *= 1e6;
+      if (n >= 1000) { delete r.presupuesto; const i = etiquetas.findIndex((e) => e.startsWith("Hasta ")); if (i >= 0) etiquetas.splice(i, 1); pon("presupuesto", `${n.toLocaleString("es-MX")} pesos`, `Hasta ${n.toLocaleString("es-MX")}`); }
+    }
+  }
   const pulg = categoria.id === "tele" ? pulgadas(texto) : null;
   if (pulg && TAMANOS_TELE.includes(pulg)) etiquetas.unshift(`${pulg} pulgadas`);
   if (categoria.id === "ropa" && pp && !("para_quien" in r)) {
@@ -512,6 +603,7 @@ export const SUGERENCIAS = [
   "Sofá de 3 plazas", "Colchón matrimonial", "Comedor de 4 sillas", "Escritorio", "Freidora de aire",
   "Cafetera", "Juego de sartenes", "Asador de gas", "Taladro",
   "Jeans Levi's 501", "Tenis para correr", "Chamarra de invierno", "Ropa de niño",
+  "Casa en renta en Tijuana", "Departamento en renta en Playas de Tijuana", "Casa en venta en Rosarito", "Departamento en renta en Chula Vista",
   "Toyota Corolla usado", "Honda CR-V usada", "Camioneta familiar usada", "Pickup usada", "Auto de subasta en Copart",
 ];
 
