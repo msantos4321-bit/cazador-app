@@ -1,8 +1,8 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=10";
-import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js?v=10";
-import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, total as totalOferta, FRANQUICIA_USD } from "./ofertas.js?v=10";
-import { TIENDAS_MX, TIENDAS_US, cadenaDe, esLocal, porUnidad, veredictoSuper, preciosEnLinea, mejorTiendaLista, haceCuanto } from "./super.js?v=10";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=11";
+import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js?v=11";
+import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, total as totalOferta, FRANQUICIA_USD } from "./ofertas.js?v=11";
+import { TIENDAS_MX, TIENDAS_US, cadenaDe, esLocal, porUnidad, veredictoSuper, preciosEnLinea, mejorTiendaLista, haceCuanto } from "./super.js?v=11";
 
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
 const $app = document.getElementById("app");
@@ -474,6 +474,11 @@ async function pantallaAgregar(textoInicial = "") {
       location.hash = `#/liga/${encodeURIComponent(texto)}`;
       return;
     }
+    if (cat.id === "auto") {
+      flujo = null; borrarBorrador();
+      location.hash = `#/autos/${encodeURIComponent(texto)}`;
+      return;
+    }
     if (!["casa", "auto", "liga"].includes(cat.id)) {
       flujo = null; borrarBorrador();
       location.hash = `#/resultados/${encodeURIComponent(texto)}`;
@@ -755,6 +760,7 @@ async function pantallaAfinar() {
     buscar.disabled = true; buscar.textContent = "Mandando…";
     const respuestas = { ...f.respuestas };
     if (f.notas?.trim()) respuestas.notas = f.notas.trim();
+    if (f.alInstante?.length) respuestas.al_instante = f.alInstante;
     const guardadas = f.tallasDe?.[f.para || ""];
     if (f.categoria.id === "ropa" && guardadas) respuestas.tallas_guardadas = guardadas;
     const fila = {
@@ -967,7 +973,16 @@ async function pantallaResultados(texto) {
     if (navigator.vibrate) navigator.vibrate(8);
     dibujar();
   }));
-  document.getElementById("a-fondo").onclick = () => { flujo = nuevoFlujo(texto); guardarBorrador(); location.hash = "#/afinar"; };
+  document.getElementById("a-fondo").onclick = () => {
+    flujo = nuevoFlujo(texto);
+    // Lo que ya salió al instante va con la solicitud: Claude empieza de ahí y no tiene que volver a buscar
+    flujo.alInstante = mostradas.filter((o) => !o.accesorio).slice(0, 24).map((o) => ({
+      titulo: o.titulo, tienda: o.tienda, precio: o.precio, moneda: o.moneda, pais: o.pais, total_mxn: o.total_mxn,
+      estado: o.estado, calificacion: o.calificacion, resenas: o.resenas, imagen: o.imagen, liga: o.liga,
+    }));
+    guardarBorrador();
+    location.hash = "#/afinar";
+  };
   dibujar();
 
   r.dibujar = dibujar;   // las respuestas que van llegando pintan la pantalla que esté a la vista
@@ -1134,6 +1149,7 @@ async function pantallaEscanear() {
           <button class="boton claro-oscuro" id="linterna" hidden>Linterna</button>
           <button class="boton claro-oscuro" id="a-mano">Escribir el número</button>
         </div>
+        <label class="boton claro-oscuro foto-boton">Sin código: tomar foto<input type="file" id="foto-entrada" accept="image/*" capture="environment" hidden></label>
       </div>
     </div>`);
   const ponerChip = (n) => { const c = document.getElementById("tienda-chip"); if (c && n) c.textContent = `En ${n.nombre} ▾`; };
@@ -1161,6 +1177,7 @@ async function pantallaEscanear() {
     hoja.querySelector("#numero-codigo").focus();
   };
   document.getElementById("a-mano").onclick = aMano;
+  activarFoto(document.getElementById("foto-entrada"), () => detenerCamara());
   const texto = document.getElementById("escaner-texto");
   const encender = async () => {
     try {
@@ -1240,7 +1257,9 @@ async function pantallaPrecio(codigo) {
           <p class="suave">Dime qué es y lo guardo para toda la familia (código ${esc(codigo)}).</p>
           <input id="que-es" placeholder="Ej. Leche Lala entera 1 litro" aria-label="Qué producto es">
           <button class="boton principal" id="guardar-que-es">Guardar</button>
+          <label class="boton foto-boton">O tómale una foto<input type="file" id="foto-desconocido" accept="image/*" capture="environment" hidden></label>
         </div>`;
+      activarFoto(document.getElementById("foto-desconocido"));
       document.getElementById("guardar-que-es").onclick = async () => {
         const nombre = document.getElementById("que-es").value.trim();
         if (!nombre) return;
@@ -1494,6 +1513,131 @@ async function ofrecerAvisos() {
   hoja.querySelector("#luego").onclick = () => hoja.remove();
   const si = hoja.querySelector("#si-avisos");
   if (si) si.onclick = async () => { si.disabled = true; await activarAvisos(); hoja.remove(); };
+}
+
+// ---------- foto del producto (Google Lens) ----------
+let fotoActual = null;
+/** Achica la foto a 1024 px (sube rápido aunque la señal sea mala) y la deja en JPEG. */
+async function achicar(archivo) {
+  const img = await createImageBitmap(archivo);
+  const escala = Math.min(1, 1024 / Math.max(img.width, img.height));
+  const lienzo = document.createElement("canvas");
+  lienzo.width = Math.round(img.width * escala); lienzo.height = Math.round(img.height * escala);
+  lienzo.getContext("2d").drawImage(img, 0, 0, lienzo.width, lienzo.height);
+  return await new Promise((ok) => lienzo.toBlob(ok, "image/jpeg", 0.82));
+}
+function activarFoto(entrada, antes = () => {}) {
+  if (!entrada) return;
+  entrada.onchange = async () => {
+    const archivo = entrada.files?.[0];
+    if (!archivo) return;
+    antes();
+    const espera = document.createElement("div");
+    espera.className = "hoja-fondo";
+    espera.innerHTML = `<div class="hoja centro"><span class="girando grande" aria-hidden="true"></span><h2>Buscando qué es…</h2><p class="suave">Reviso la foto con Google. Tarda unos segundos.</p></div>`;
+    document.body.appendChild(espera);
+    try {
+      const blob = await achicar(archivo);
+      const ruta = `${usuario.id}/${Date.now()}.jpg`;
+      const { error } = await db.storage.from("fotos").upload(ruta, blob, { contentType: "image/jpeg" });
+      if (error) throw error;
+      const d = await buscarRapido({ accion: "foto", ruta, pais: tiendaActual()?.pais || "mx" });
+      if (d?.error) throw new Error(d.error);
+      fotoActual = { ...d, vista: URL.createObjectURL(blob) };
+      espera.remove();
+      location.hash = "#/foto";
+    } catch (e) {
+      espera.remove();
+      const c = String(e?.message || e);
+      aviso(c.includes("SIN_GOOGLE") || c.includes("CUPO") ? "Ya se usaron las búsquedas de Google de este mes." : "No pude revisar la foto. Intenta otra vez con más luz.", "error");
+    }
+    entrada.value = "";
+  };
+}
+
+function pantallaFoto() {
+  if (!fotoActual) { location.hash = "#/escanear"; return; }
+  const f = fotoActual;
+  const conPrecio = f.parecidos.filter((x) => x.precio);
+  pintar(`
+    <main>
+      <a class="volver" href="#/escanear">‹ Escanear otro</a>
+      <div class="ficha"><img class="ficha-foto" src="${esc(f.vista)}" alt="Tu foto"><div><p class="ceja">Parece que es</p>
+        <h1 class="h1-ficha">${esc(f.nombre || "No estoy seguro")}</h1></div></div>
+      ${f.nombre ? `<a class="boton principal" href="#/resultados/${encodeURIComponent(f.nombre)}">Ver precios en todas las tiendas</a>` : ""}
+      <p class="suave">¿No es eso? Corrige el nombre y busca:</p>
+      <form id="f-foto" class="pila"><input id="nombre-foto" value="${esc(f.nombre || "")}" aria-label="Qué producto es"><button class="boton">Buscar con este nombre</button></form>
+      ${conPrecio.length ? `<h2 class="seccion">Lo que encontró Google</h2>
+      <div class="otros-precios">${conPrecio.slice(0, 8).map((x) => `
+        <a class="precio-fila enlace" href="${esc(x.liga)}" target="_blank" rel="noopener">
+          <div><b class="dos-lineas">${esc(x.titulo)}</b><p class="suave pequeno">${esc(x.tienda)}</p></div>
+          <div class="derecha"><b class="precio-fila-num">${x.moneda === "USD" ? dolares(x.precio) : pesos(x.precio)}</b></div></a>`).join("")}</div>` : ""}
+    </main>${barra("agregar")}`);
+  document.getElementById("f-foto").onsubmit = (ev) => {
+    ev.preventDefault();
+    const n = document.getElementById("nombre-foto").value.trim();
+    if (n) location.hash = `#/resultados/${encodeURIComponent(n)}`;
+  };
+}
+
+// ---------- autos: dónde buscar de verdad (Marketplace no se puede leer desde la nube) ----------
+function pantallaAutos(texto) {
+  const cat = detectar(texto);
+  const e = entender(texto, cat);
+  const q = consultaLimpia(texto).replace(/\b(auto|carro|coche|camioneta|usad[oa]|seminuev[oa])\b/gi, " ").replace(/\s+/g, " ").trim() || texto;
+  const tope = presupuestoDe(e.respuestas.presupuesto);
+  const max = tope ? Math.round(tope.moneda === "USD" ? tope.monto * 18.6 : tope.monto) : null;
+  const maxUsd = tope ? Math.round(tope.moneda === "USD" ? tope.monto : tope.monto / 18.6) : null;
+  const slug = q.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const enc = encodeURIComponent(q);
+  const sitios = [
+    { lado: "mx", nombre: "Facebook Marketplace", nota: "Donde está casi todo en Tijuana", url: `https://www.facebook.com/marketplace/tijuana/search?query=${enc}${max ? `&maxPrice=${max}` : ""}` },
+    { lado: "mx", nombre: "Mercado Libre Autos", nota: "Baja California", url: `https://autos.mercadolibre.com.mx/baja-california/${slug}${max ? `_PriceRange_0-${max}` : ""}` },
+    { lado: "mx", nombre: "Seminuevos", nota: "Lotes y particulares", url: `https://www.seminuevos.com/usados/baja+california-/autos?q=${enc}` },
+    { lado: "mx", nombre: "Craigslist Tijuana", nota: "Particulares", url: `https://tijuana.craigslist.org/search/cta?query=${enc}` },
+    { lado: "us", nombre: "Craigslist San Diego", nota: "Particulares del otro lado", url: `https://sandiego.craigslist.org/search/cta?query=${enc}${maxUsd ? `&max_price=${maxUsd}` : ""}` },
+    { lado: "us", nombre: "Copart", nota: "Subastas (revisa título y daños)", url: `https://www.copart.com/lotSearchResults?free=true&query=${enc}` },
+  ];
+  pintar(`
+    <main>
+      <a class="volver" href="#/agregar">‹ Buscar otra cosa</a>
+      <p class="ceja">Autos</p>
+      <h1 class="h1-resultados">${esc(q)}</h1>
+      ${e.etiquetas.length ? `<p class="entendi-linea">${e.etiquetas.map(esc).join(" · ")}</p>` : ""}
+      <p class="suave">Los autos casi siempre se venden en Marketplace y anuncios de particulares, que no puedo leer solo. Te abro la búsqueda ya hecha en cada sitio${max ? ` con tu tope de ${pesos(max)}` : ""}:</p>
+      <div class="sitios">${sitios.map((x) => `
+        <a class="sitio" href="${esc(x.url)}" target="_blank" rel="noopener">
+          <span class="bandera">${x.lado === "us" ? "EE. UU." : "México"}</span>
+          <b>${esc(x.nombre)}</b><small>${esc(x.nota)}</small></a>`).join("")}
+      </div>
+      <section class="tarjeta pila">
+        <span class="titulo">¿Ya viste uno que te gustó?</span>
+        <p class="suave">Pega la liga del anuncio y te digo si el precio es bueno comparado con otros parecidos.</p>
+        <form id="f-anuncio" class="pila"><input id="anuncio" placeholder="Pega aquí la liga del anuncio" inputmode="url">
+        <button class="boton principal">Revisar el precio</button></form>
+      </section>
+      <section class="tarjeta pila">
+        <span class="titulo">¿Cuánto vale?</span>
+        <p class="suave">Para saber el precio justo antes de negociar:</p>
+        <div class="fila-botones">
+          <a class="boton" href="https://www.libroazul.com/" target="_blank" rel="noopener">Libro Azul (México)</a>
+          <a class="boton" href="https://www.kbb.com/whats-my-car-worth/" target="_blank" rel="noopener">Kelley Blue Book (EE. UU.)</a>
+        </div>
+      </section>
+      <section class="tarjeta pila a-fondo">
+        <span class="titulo">¿Quieres que busque por ti?</span>
+        <p class="suave">Claude revisa Mercado Libre, Seminuevos y lotes, y te propone los mejores con su semáforo. Tarda unos minutos.</p>
+        <button class="boton" id="a-fondo-auto">Pedir análisis a fondo</button>
+        <p class="suave pequeno centro">Usa 10 créditos</p>
+      </section>
+    </main>${barra("agregar")}`);
+  document.getElementById("f-anuncio").onsubmit = (ev) => {
+    ev.preventDefault();
+    const liga = document.getElementById("anuncio").value.trim();
+    if (!/^https?:\/\//.test(liga)) return aviso("Pega la liga completa del anuncio (empieza con https).");
+    flujo = nuevoFlujo(liga); guardarBorrador(); location.hash = "#/afinar";
+  };
+  document.getElementById("a-fondo-auto").onclick = () => { flujo = nuevoFlujo(texto); guardarBorrador(); location.hash = "#/afinar"; };
 }
 
 // ---------- casas y departamentos ----------
@@ -2239,7 +2383,8 @@ async function pantallaAjustes() {
       <h1>Tus datos</h1>
       ${tarjetaUso(uso)}
       <a class="tarjeta enlace-tarjeta" href="#/tallas"><span class="titulo">Tallas</span><span class="suave">Las tuyas y las que te compartió tu familia</span></a>
-      ${uso?.admin ? `<a class="tarjeta enlace-tarjeta" href="#/familia"><span class="titulo">Familia y accesos</span><span class="suave">Repartir créditos, pausar o invitar</span></a>` : ""}
+      ${uso?.admin ? `<a class="tarjeta enlace-tarjeta" href="#/familia"><span class="titulo">Familia y accesos</span><span class="suave">Repartir créditos, pausar o invitar</span></a>
+        <a class="tarjeta enlace-tarjeta" href="#/uso"><span class="titulo">Cómo se usa la app</span><span class="suave">Búsquedas de Google que quedan, qué busca la familia y qué abre</span></a>` : ""}
       <form id="f-nombre" class="tarjeta pila">
         <label for="nombre">¿Cómo te llamas?</label>
         <input id="nombre" value="${esc(perfil?.nombre || "")}" autocomplete="name">
@@ -2298,6 +2443,40 @@ async function pintarAvisos() {
   };
 }
 
+// ---------- panel "Cómo se usa" (solo Mauricio) ----------
+async function pantallaUso() {
+  pintar(esqueleto("Cómo se usa", 3) + barra("ajustes"));
+  const { data: u, error } = await db.rpc("panel_uso");
+  if (error || !u) return pintar(`<main><a class="volver" href="#/ajustes">‹ Ajustes</a><h1>Solo para el administrador</h1></main>${barra("ajustes")}`);
+  const pct = Math.min(100, Math.round((u.google_usadas / Math.max(1, u.google_tope)) * 100));
+  const lista = (filas, f) => filas.length ? `<ul class="lista-tallas">${filas.map(f).join("")}</ul>` : `<p class="suave">Todavía nada este mes.</p>`;
+  pintar(`
+    <main>
+      <a class="volver" href="#/ajustes">‹ Ajustes</a>
+      <p class="ceja">Este mes</p>
+      <h1>Cómo se usa la app</h1>
+      <section class="tarjeta pila">
+        <span class="titulo">Búsquedas de Google</span>
+        <div class="medidor"><i style="width:${pct}%"></i></div>
+        <p><b>${u.google_usadas}</b> de ${u.google_tope} usadas · quedan <b>${Math.max(0, u.google_tope - u.google_usadas)}</b>. Se renuevan el día 1.</p>
+        <p class="suave pequeno">${u.de_memoria} búsquedas salieron de la memoria (no gastaron). ${u.ms_promedio ? `Tardan ${(u.ms_promedio / 1000).toFixed(1)} s en promedio.` : ""}${u.fallidas ? ` ${u.fallidas} fallaron.` : ""}</p>
+      </section>
+      <div class="cifras">
+        <div><b>${u.busquedas}</b><span>búsquedas</span></div>
+        <div><b>${u.clics}</b><span>ligas abiertas</span></div>
+        <div><b>${u.precios_anotados}</b><span>precios anotados</span></div>
+        <div><b>${u.analisis}</b><span>análisis a fondo</span></div>
+        <div><b>${u.celulares_con_avisos}</b><span>celulares con avisos</span></div>
+      </div>
+      <h2 class="seccion">Por persona</h2>
+      ${lista(u.por_persona, (x) => `<li><b>${esc(x.nombre)}</b> · ${x.busquedas} búsquedas · ${x.anotados} precios · ${x.clics} ligas</li>`)}
+      <h2 class="seccion">Lo más buscado</h2>
+      ${lista(u.lo_mas_buscado, (x) => `<li>${esc(x.texto)} <span class="suave">· ${x.veces}</span></li>`)}
+      <h2 class="seccion">Tiendas que más abren</h2>
+      ${lista(u.tiendas_abiertas, (x) => `<li>${esc(x.tienda)} <span class="suave">· ${x.veces}</span></li>`)}
+    </main>${barra("ajustes")}`);
+}
+
 // ---------- rutas ----------
 async function enrutar() {
   document.querySelectorAll(".hoja-fondo").forEach((h) => h.remove());   // ninguna hoja se queda abierta al cambiar de pantalla
@@ -2308,6 +2487,8 @@ async function enrutar() {
   if (ruta === "afinar") return pantallaAfinar();
   if (ruta === "resultados" && id) return pantallaResultados(decodeURIComponent(location.hash.slice("#/resultados/".length)));
   if (ruta === "escanear") return pantallaEscanear();
+  if (ruta === "foto") return pantallaFoto();
+  if (ruta === "autos" && id) return pantallaAutos(decodeURIComponent(location.hash.slice("#/autos/".length)));
   if (ruta === "precio" && id) return pantallaPrecio(id.replace(/\D/g, ""));
   if (ruta === "super") return pantallaSuper();
   if (ruta === "liga" && id) return pantallaLiga(decodeURIComponent(location.hash.slice("#/liga/".length)));
@@ -2316,6 +2497,7 @@ async function enrutar() {
   if (ruta === "tallas") return pantallaTallas();
   if (ruta === "casas") return pantallaCasas();
   if (ruta === "familia") return pantallaFamilia();
+  if (ruta === "uso") return pantallaUso();
   return pantallaHoy();
 }
 
