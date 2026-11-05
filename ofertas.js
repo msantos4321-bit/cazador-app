@@ -80,11 +80,25 @@ export function esAccesorio(o, consulta, mediana) {
 
 const palabras = (t) => sin(t).replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((p) => p.length > 1);
 
+const OTRA_ESCRITURA = /[\u0590-\u06FF\u0400-\u04FF\u0E00-\u0E7F\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
+
+/** Palabras con número de la búsqueda (modelo, tamaño, generación): el título debe tenerlas todas. */
+export function clavesDe(consulta) {
+  return [...new Set(palabras(consulta).filter((p) => /\d/.test(p)))];
+}
+export function coincide(titulo, claves) {
+  if (!claves.length) return true;
+  const t = palabras(titulo);
+  // "55" también vale en "55in" / "55pulgadas"; "d10" NO vale en "d10s" (es otro modelo)
+  return claves.every((c) => t.some((x) => x === c || (/^\d+$/.test(c) && x.startsWith(c) && !/^\d/.test(x.slice(c.length)))));
+}
+
 /** Junta respuestas de México y EE. UU. y les pone precio total, etiquetas y grupo del mismo modelo. */
 export function preparar(listas, tc, consulta) {
-  const todas = listas.flat().map((o, i) => {
+  const claves = clavesDe(consulta);
+  const todas = listas.flat().filter((o) => !OTRA_ESCRITURA.test(o.titulo)).map((o, i) => {
     const t = total(o, tc);
-    return { ...o, ...t, i, tipo_tienda: tipoTienda(o.tienda), precio_mxn_ref: t.precio_mxn };
+    return { ...o, ...t, i, tipo_tienda: tipoTienda(o.tienda), precio_mxn_ref: t.precio_mxn, parecido: !coincide(o.titulo, claves) };
   });
   const precios = todas.map((o) => o.precio_mxn_ref).sort((a, b) => a - b);
   const mediana = precios.length ? precios[Math.floor(precios.length / 2)] : 0;
@@ -108,15 +122,18 @@ export function filtrar(todas, f = {}) {
   if (f.confiables) r = r.filter((o) => o.tipo_tienda === "confiable");
   if (f.tope) r = r.filter((o) => o.total_mxn <= f.tope);
   const orden = f.orden || "precio";
-  r = [...r].sort(orden === "calificacion"
+  const porOrden = orden === "calificacion"
     ? (a, b) => (b.calificacion ?? 0) - (a.calificacion ?? 0) || a.total_mxn - b.total_mxn
-    : (a, b) => a.total_mxn - b.total_mxn);
+    : (a, b) => a.total_mxn - b.total_mxn;
+  // Primero lo que coincide con el modelo que pidió; después los modelos parecidos
+  r = [...r].sort((a, b) => (a.parecido - b.parecido) || porOrden(a, b));
   // El mismo modelo solo una vez (la oferta más barata), salvo que pida ver todas
   if (!f.repetidos) {
     const vistos = new Set();
     r = r.filter((o) => (vistos.has(o.grupo) ? false : vistos.add(o.grupo)));
   }
-  const barata = r.reduce((m, o) => (m && m.total_mxn <= o.total_mxn ? m : o), null);
+  const exactas = r.filter((o) => !o.parecido);
+  const barata = (exactas.length ? exactas : r).reduce((m, o) => (m && m.total_mxn <= o.total_mxn ? m : o), null);
   return r.map((o) => ({ ...o, mas_barata: o === barata }));
 }
 

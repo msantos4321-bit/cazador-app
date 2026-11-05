@@ -1,7 +1,7 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
-import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js";
-import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, FRANQUICIA_USD } from "./ofertas.js";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=8";
+import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js?v=8";
+import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, FRANQUICIA_USD } from "./ofertas.js?v=8";
 
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
 const $app = document.getElementById("app");
@@ -862,7 +862,10 @@ async function pantallaResultados(texto) {
       $lista.innerHTML = `${avisos}<div class="vacio"><p class="titulo">${todas.length ? "Nada con esos filtros" : "No encontré resultados"}</p>
         <p class="suave">${todas.length ? "Quita algún filtro de arriba para ver más." : "Prueba con otras palabras, por ejemplo la marca o el modelo."}</p></div>`;
     } else {
-      $lista.innerHTML = avisos + mostradas.map((o, i) => tarjetaOferta(o, i, r.tc)).join("")
+      const primerParecido = mostradas.findIndex((o) => o.parecido);
+      $lista.innerHTML = avisos + mostradas.map((o, i) => (i === primerParecido
+        ? `<h2 class="seccion separador">${primerParecido === 0 ? "No encontré ese modelo exacto. Estos se parecen:" : "Otros modelos parecidos"}</h2>` : "")
+        + tarjetaOferta(o, i, r.tc)).join("")
         + (pendientes.length ? "<div class='esqueleto tarjeta-esq'></div>".repeat(mostradas.length ? 1 : 3) : "");
     }
     $extras.innerHTML = acc && !pendientes.length
