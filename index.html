@@ -334,6 +334,49 @@ h2.seccion{font-size:25px;margin:14px 0 -2px}
 .regalos{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .persona-acceso.pausada{opacity:.75}
 .rojo-t{color:var(--rojo-t)}
+/* Resultados al instante */
+.resultados{gap:16px}
+.resultados .segmentos{grid-template-columns:repeat(3,1fr)}
+.resultados .segmento{min-height:46px}
+.h1-resultados{font-family:'Newsreader',serif;font-weight:500;font-size:30px;line-height:1.15;margin:0;letter-spacing:-.3px}
+.h1-resultados::first-letter{text-transform:uppercase}
+.entendi-linea{margin:-8px 0 0;color:var(--verde-t);font-weight:600;font-size:16px}
+.resultados .filtros{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:0 20px 2px}
+.resultados .filtros::-webkit-scrollbar{display:none}
+.resultados .filtros .chip{flex:none;white-space:nowrap}
+.franquicia-mini{color:var(--amarillo-t);font-weight:600}
+.centro{text-align:center}
+.filtros .chip[aria-pressed="true"]{background:var(--acento);border-color:var(--acento);color:var(--acento-txt)}
+.estado-busqueda{color:var(--suave);font-size:16px;min-height:22px;display:flex;align-items:center;gap:10px}
+.girando{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--linea);border-top-color:var(--oro);animation:girar .8s linear infinite;flex:none}
+@keyframes girar{to{transform:rotate(360deg)}}
+#lista-ofertas{display:flex;flex-direction:column;gap:14px}
+.oferta{background:var(--tarjeta);border:1px solid var(--linea);box-shadow:var(--sombra);border-radius:var(--r-grande);padding:16px;display:flex;flex-direction:column;gap:12px;position:relative}
+.oferta.la-mas-barata{border-color:var(--oro);box-shadow:0 0 0 3px var(--oro-claro),var(--sombra)}
+.cinta{align-self:flex-start;background:var(--mantequilla);color:#5C4520;font-weight:700;font-size:14px;border-radius:999px;padding:4px 12px;letter-spacing:.2px}
+.oferta-cuerpo{display:grid;grid-template-columns:92px 1fr;gap:14px;align-items:start}
+.oferta-foto{width:92px;height:92px;object-fit:contain;background:#fff;border-radius:var(--r);border:1px solid var(--linea);padding:6px}
+.oferta-foto.vacia{display:flex;align-items:center;justify-content:center;color:var(--tenue);background:var(--hundido);border-color:transparent}
+.oferta-info{display:flex;flex-direction:column;gap:6px;min-width:0}
+.oferta-info h3{font-size:17px;font-weight:600;line-height:1.3;margin:0}
+.oferta-tienda{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:15px;color:var(--suave);margin:0}
+.bandera{font-size:12px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--tenue)}
+.etiqueta{font-size:13px;font-weight:600;border-radius:999px;padding:2px 9px}
+.etiqueta.buena{background:var(--verde-f);color:var(--verde-t)}
+.etiqueta.aviso-et{background:var(--amarillo-f);color:var(--amarillo-t)}
+.estrellas{margin:0;font-size:15px;color:var(--oro);font-weight:600}
+.oferta-precio{display:flex;flex-direction:column;gap:3px}
+.oferta-precio p{margin:0}
+.precio-total{font-family:'Newsreader',serif;font-size:32px;font-weight:500;line-height:1.1;letter-spacing:-.3px}
+.precio-total .suave{font-family:'Figtree',sans-serif;font-size:15px;font-weight:500;letter-spacing:0}
+.otras-tiendas{background:none;border:0;font:inherit;text-align:left;padding:4px 0;cursor:pointer}
+#extras .enlace-falso{background:none;border:0;font:inherit;padding:8px 0;cursor:pointer}
+.a-fondo{margin-top:6px}
+.hoja-fondo{position:fixed;inset:0;z-index:300;background:rgba(15,18,36,.45);display:flex;align-items:flex-end;justify-content:center;animation:aparecer .15s ease-out}
+.hoja{background:var(--tarjeta);width:100%;max-width:560px;border-radius:24px 24px 0 0;padding:24px 20px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px;box-shadow:var(--sombra-alta)}
+.hoja h2{margin:0;font-family:'Newsreader',serif;font-weight:500;font-size:26px}
+.hoja input{font:inherit;font-size:18px;min-height:52px;border:1px solid var(--linea);border-radius:var(--r);padding:0 14px;background:var(--fondo);color:var(--tinta)}
+@keyframes aparecer{from{opacity:0}to{opacity:1}}
 </style>
 </head>
 <body>

@@ -498,7 +498,7 @@ export function entender(texto, categoria) {
   if (/\b(barat[oa]s?|economic[oa]s?)\b/.test(t)) pon("nivel", "economica", "Que sea barata");
   else if (/\b(la mejor|el mejor|de las mejores|gama alta|premium)\b/.test(t)) pon("nivel", "mejor", "La mejor");
 
-  const m = t.match(/\b(?:menos de|hasta|maximo|no mas de|presupuesto de|de unos|como)\s*\$?\s*([\d.,]+)\s*(mil|k)?\s*(pesos|dolares|usd|dlls|dls)?/);
+  const m = t.match(/\b(?:menos de|hasta|maximo|no mas de|no pase de|no pasar de|presupuesto de|de unos|como)\s*\$?\s*([\d.,]+)\s*(mil|k)?\s*(pesos|dolares|usd|dlls|dls)?/);
   if (m && (m[2] || m[3] || Number(m[1].replace(/[.,]/g, "")) >= 100)) {
     let n = Number(m[1].replace(/,/g, "")); if (m[2]) n *= 1000;
     const moneda = m[3] && m[3] !== "pesos" ? "dólares" : "pesos";

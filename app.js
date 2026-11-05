@@ -1,6 +1,7 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
-import { SUPABASE_URL, SUPABASE_KEY, BOT_TELEGRAM } from "./config.js";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js";
+import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, FRANQUICIA_USD } from "./ofertas.js";
 
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
 const $app = document.getElementById("app");
@@ -230,7 +231,7 @@ async function pantallaHoy() {
     return `<a class="tarjeta solicitud ${lista ? "lista" : sin ? "" : "buscando"}" href="#/solicitud/${s.id}">
       <span class="ceja">${lista ? "¡Ya están tus opciones!" : sin ? "No encontré algo bueno" : `<span class="punto"></span>Buscando opciones…`}</span>
       <span class="titulo">“${esc(s.texto)}”</span>
-      <span class="suave">${lista ? "Toca para elegir." : sin ? "Toca para ver por qué." : `${cuandoLlega(s.creado)}. Te aviso por Telegram.`}</span>
+      <span class="suave">${lista ? "Toca para elegir." : sin ? "Toca para ver por qué." : `${cuandoLlega(s.creado)}. Te aviso en el celular.`}</span>
     </a>`;
   }).join("");
 
@@ -314,7 +315,7 @@ async function pantallaProducto(id) {
       </section>
       <section class="tarjeta pila">
         <span class="titulo">Avísame si baja a…</span>
-        <p class="suave">Te mando un Telegram cuando llegue a este precio o menos.</p>
+        <p class="suave">Te aviso en el celular cuando llegue a este precio o menos.</p>
         <form id="f-meta" class="fila-meta">
           <span class="moneda">${usd ? "US$" : "$"}</span>
           <input id="meta" inputmode="decimal" value="${s.precio_objetivo ?? ""}" aria-label="Precio meta">
@@ -417,8 +418,7 @@ async function pantallaAgregar(textoInicial = "") {
     <main>
       <a class="volver" href="#/hoy">‹ Mi lista</a>
       <h1>¿Qué quieres comprar?</h1>
-      <p class="suave">Escríbelo o díctalo como se lo dirías a alguien. Entre más detalles, menos te pregunto.</p>
-      <p id="quedan" class="quedan" hidden></p>
+      <p class="suave">Escríbelo o díctalo como se lo dirías a alguien. En segundos te enseño los precios de México y Estados Unidos.</p>
       ${borrador ? `<button class="tarjeta borrador" id="seguir"><span class="suave pequeno">Te quedaste a medias</span><span class="titulo">“${esc(borrador.texto)}”</span><span class="enlace-falso">Continuar donde me quedé</span></button>` : ""}
       <form id="f-que" class="pila">
         <div class="campo-voz">
@@ -427,7 +427,7 @@ async function pantallaAgregar(textoInicial = "") {
         </div>
         <button type="button" id="mic" class="boton microfono-boton" hidden>${ICONO_MIC}<span>Dictar con mi voz</span></button>
         <ul id="sugerencias" class="sugerencias" role="listbox" aria-label="Sugerencias" hidden></ul>
-        <button class="boton principal" type="submit">Siguiente</button>
+        <button class="boton principal" type="submit">Buscar</button>
       </form>
       <h2 class="seccion">O empieza por aquí</h2>
       <div class="inicios">
@@ -440,6 +440,13 @@ async function pantallaAgregar(textoInicial = "") {
   const ir = (texto) => {
     texto = texto.trim();
     if (!texto) return;
+    // Productos: la lista al instante. Casas, autos y ligas siguen con sus preguntas.
+    const cat = esLiga(texto) ? { id: "liga" } : detectar(texto);
+    if (!["casa", "auto", "liga"].includes(cat.id)) {
+      flujo = null; borrarBorrador();
+      location.hash = `#/resultados/${encodeURIComponent(texto)}`;
+      return;
+    }
     flujo = nuevoFlujo(texto, flujo && flujo.texto !== texto ? flujo : null);
     guardarBorrador();
     location.hash = "#/afinar";
@@ -476,22 +483,6 @@ async function pantallaAgregar(textoInicial = "") {
     lista.querySelectorAll(".sugerencia").forEach((b) => (b.onclick = () => { que.value = b.dataset.v; lista.hidden = true; ir(que.value); }));
   });
   activarMicrofono(que, document.getElementById("mic"), document.getElementById("voz"));
-  leerUso().then((u) => {
-    const q = document.getElementById("quedan");
-    if (!q || !u?.invitado) return;
-    q.hidden = false;
-    if (u.saldo !== undefined) {
-      const costo = (u.costos || {}).busqueda || 10;
-      const alcanza = Math.max(0, Math.min(Math.floor(u.saldo / costo), u.familia_cupo - u.familia_busquedas));
-      q.className = `quedan ${alcanza <= 2 ? "pocas" : ""}`;
-      q.textContent = u.pausado ? "Tu cuenta está en pausa." : alcanza === 0 ? `Ya no te alcanzan los créditos para buscar (cada búsqueda usa ${costo}).`
-        : `Cada búsqueda usa ${costo} créditos. Tienes ${Math.max(u.saldo, 0)}: te alcanza para ${alcanza === 1 ? "1 búsqueda" : `${alcanza} búsquedas`}.`;
-      return;
-    }
-    const quedan = Math.max(0, Math.min(u.mi_cupo - u.mis_busquedas, u.familia_cupo - u.familia_busquedas));
-    q.className = `quedan ${quedan <= 2 ? "pocas" : ""}`;
-    q.textContent = quedan === 0 ? "Ya no te quedan búsquedas este mes. El día 1 se renuevan." : `Te ${quedan === 1 ? "queda 1 búsqueda" : `quedan ${quedan} búsquedas`} este mes.`;
-  });
   document.getElementById("f-que").onsubmit = (e) => { e.preventDefault(); detenerVoz(); ir(que.value); };
 }
 
@@ -746,6 +737,310 @@ async function pantallaAfinar() {
     borrarBorrador(); flujo = null;
     location.hash = `#/solicitud/${data.id}`;
   };
+}
+
+// ---------- 1b. Resultados al instante ----------
+const ERRORES_RAPIDA = {
+  SIN_GOOGLE: "Ya se usaron las búsquedas de Google de este mes. Se renuevan el día 1.",
+  CUPO_FAMILIA: "La familia ya usó las búsquedas al instante de este mes. Se renuevan el día 1.",
+  PAUSADO: "Tu cuenta está en pausa. Pídele a Mauricio que la active.",
+  SIN_INVITACION: "Esta cuenta no tiene invitación.",
+  SIN_CREDITOS: "No te alcanzan los créditos para buscar.",
+  SIN_RESULTADOS: "Google no encontró nada con esas palabras.",
+  SIN_SESION: "Se cerró tu sesión. Vuelve a entrar.",
+};
+const LADOS = { mx: "México", us: "Estados Unidos" };
+let rapida = null;   // la búsqueda en pantalla (se conserva al volver de la tienda)
+
+async function buscarRapido(cuerpo) {
+  try {
+    const { data, error } = await db.functions.invoke("buscar", { body: cuerpo });
+    if (error) {
+      let codigo = "FALLO";
+      try { codigo = (await error.context.json()).error || codigo; } catch {}
+      return { error: codigo };
+    }
+    return data;
+  } catch {
+    return { error: "SIN_INTERNET" };
+  }
+}
+
+function tarjetaOferta(o, i, tc) {
+  const usd = o.moneda === "USD";
+  const tipo = o.estado !== "nuevo" ? `<span class="etiqueta aviso-et">${o.estado === "usado" ? "Usado" : "Reacondicionado"}</span>`
+    : o.tipo_tienda === "confiable" ? `<span class="etiqueta buena">Tienda grande</span>`
+    : o.tipo_tienda === "marketplace" ? `<span class="etiqueta aviso-et">Revisa al vendedor</span>` : "";
+  const desglose = usd
+    ? `${dolares(o.precio)}${o.envio ? ` + envío ${dolares(o.envio)}` : ""} + impuesto de California`
+    : o.envio ? `${pesos(o.precio)} + envío ${pesos(o.envio)}` : "";
+  const envio = o.envio === 0 ? "Envío gratis" : o.envio_desconocido ? "Envío: revísalo en la tienda" : "";
+  const estrellas = o.calificacion ? `★ ${o.calificacion.toLocaleString("es-MX")}${o.resenas ? ` <span class="suave">(${Math.round(o.resenas).toLocaleString("es-MX")})</span>` : ""}` : "";
+  return `
+    <article class="oferta ${o.mas_barata ? "la-mas-barata" : ""}" data-i="${i}">
+      ${o.mas_barata ? `<p class="cinta">La más barata</p>` : ""}
+      <div class="oferta-cuerpo">
+        ${foto(o.imagen, "oferta-foto")}
+        <div class="oferta-info">
+          <h3 class="dos-lineas">${esc(o.titulo)}</h3>
+          <p class="oferta-tienda"><span class="bandera">${o.pais === "us" ? "EE. UU." : "México"}</span> ${esc(o.tienda)} ${tipo}</p>
+          ${estrellas ? `<p class="estrellas">${estrellas}</p>` : ""}
+        </div>
+      </div>
+      <div class="oferta-precio">
+        <p class="precio-total">${pesos(o.total_mxn)}${usd ? `<span class="suave"> en total</span>` : ""}</p>
+        ${desglose ? `<p class="suave pequeno">${desglose}</p>` : ""}
+        ${envio ? `<p class="suave pequeno">${envio}</p>` : ""}
+        ${o.descuento ? `<p class="suave pequeno">La tienda dice ${o.descuento} % de descuento (no siempre es real)</p>` : ""}
+        ${o.pasa_franquicia ? `<p class="pequeno franquicia-mini">Pasa la franquicia de US$${FRANQUICIA_USD}: al cruzar se declara</p>` : ""}
+      </div>
+      <div class="fila-botones">
+        <button class="boton principal ir-tienda" data-i="${i}">Ir a la tienda</button>
+        <button class="boton vigilar-oferta" data-i="${i}">Vigilar</button>
+      </div>
+      ${o.en_tiendas > 1 ? `<button class="enlace-falso otras-tiendas" data-i="${i}">Este modelo sale en ${o.en_tiendas} tiendas · ver todas</button>` : ""}
+    </article>`;
+}
+
+async function pantallaResultados(texto) {
+  const cat = detectar(texto);
+  const e = entender(texto, cat);
+  const consulta = consultaLimpia(texto);
+  const tope = presupuestoDe(e.respuestas.presupuesto);
+  if (!rapida || rapida.texto !== texto) {
+    rapida = { texto, consulta, listas: { mx: null, us: null }, errores: {}, tc: 18.6, busquedas: {},
+      filtros: { lado: e.respuestas.lado || "todas", nuevo: false, confiables: false, tope: !!tope, accesorios: false, repetidos: false, orden: "precio" } };
+  }
+  const r = rapida;
+  const lados = r.filtros.lado === "mx" || r.filtros.lado === "us" ? [r.filtros.lado] : ["mx", "us"];
+  const topePesos = tope ? Math.round(tope.monto * (tope.moneda === "USD" ? r.tc : 1)) : null;
+
+  pintar(`
+    <main class="resultados">
+      <a class="volver" href="#/agregar" id="otra">‹ Buscar otra cosa</a>
+      <h1 class="h1-resultados">${esc(consulta)}</h1>
+      ${e.etiquetas.length ? `<p class="entendi-linea">${e.etiquetas.map(esc).join(" · ")}</p>` : ""}
+      <div class="segmentos" role="radiogroup" aria-label="Dónde comprar">
+        ${[["todas", "Ambos"], ["mx", "México"], ["us", "EE. UU."]].map(([v, t]) =>
+          `<button class="segmento lado" role="radio" data-v="${v}" aria-checked="${r.filtros.lado === v}">${t}</button>`).join("")}
+      </div>
+      <div class="chips filtros">
+        <button class="chip filtro" data-f="nuevo" aria-pressed="${r.filtros.nuevo}">Solo nuevos</button>
+        <button class="chip filtro" data-f="confiables" aria-pressed="${r.filtros.confiables}">Solo tiendas grandes</button>
+        ${tope ? `<button class="chip filtro" data-f="tope" aria-pressed="${r.filtros.tope}">Hasta ${tope.moneda === "USD" ? dolares(tope.monto) : pesos(tope.monto)}</button>` : ""}
+        <button class="chip filtro" data-f="orden" aria-pressed="${r.filtros.orden === "calificacion"}">Mejor calificadas</button>
+      </div>
+      <p id="estado-busqueda" class="estado-busqueda" role="status"></p>
+      <div id="lista-ofertas"></div>
+      <div id="extras"></div>
+      <section class="tarjeta pila a-fondo">
+        <span class="titulo">¿No sabes cuál conviene?</span>
+        <p class="suave">Claude revisa reseñas, historial de precios y garantía, y te recomienda la mejor en cada nivel. Tarda unos minutos y te avisa.</p>
+        <button class="boton" id="a-fondo">Pedir análisis a fondo</button>
+        <p class="suave pequeno centro">Usa 10 créditos</p>
+      </section>
+    </main>${barra("agregar")}`);
+
+  const $estado = document.getElementById("estado-busqueda");
+  const $lista = document.getElementById("lista-ofertas");
+  const $extras = document.getElementById("extras");
+  let mostradas = [];
+
+  function dibujar() {
+    if (rapida !== r) return;
+    const listas = lados.map((l) => r.listas[l]).filter(Boolean);
+    const pendientes = lados.filter((l) => !r.listas[l] && !r.errores[l]);
+    const todas = preparar(listas, r.tc, r.consulta);
+    mostradas = filtrar(todas, { ...r.filtros, lado: r.filtros.lado, tope: r.filtros.tope ? topePesos : null });
+    const acc = cuantosAccesorios(todas);
+    const fallidos = lados.filter((l) => r.errores[l]);
+    $estado.innerHTML = pendientes.length
+      ? `<span class="girando" aria-hidden="true"></span> Buscando en ${pendientes.map((l) => LADOS[l]).join(" y ")}…`
+      : todas.length ? `${mostradas.length === 1 ? "1 opción" : `${mostradas.length} opciones`} · la más barata primero · dólar a $${r.tc.toFixed(2)}` : "";
+    const avisos = fallidos.map((l) => `<p class="nota">${esc(LADOS[l])}: ${esc(ERRORES_RAPIDA[(r.errores[l] || "").split(":")[0]] || (r.errores[l] === "SIN_INTERNET" ? "No hay internet. Revisa tu conexión." : "No se pudo buscar. Intenta otra vez en un momento."))}</p>`).join("");
+    if (!mostradas.length && !pendientes.length) {
+      $lista.innerHTML = `${avisos}<div class="vacio"><p class="titulo">${todas.length ? "Nada con esos filtros" : "No encontré resultados"}</p>
+        <p class="suave">${todas.length ? "Quita algún filtro de arriba para ver más." : "Prueba con otras palabras, por ejemplo la marca o el modelo."}</p></div>`;
+    } else {
+      $lista.innerHTML = avisos + mostradas.map((o, i) => tarjetaOferta(o, i, r.tc)).join("")
+        + (pendientes.length ? "<div class='esqueleto tarjeta-esq'></div>".repeat(mostradas.length ? 1 : 3) : "");
+    }
+    $extras.innerHTML = acc && !pendientes.length
+      ? `<button class="enlace-falso" id="ver-accesorios">${r.filtros.accesorios ? "Ocultar" : "Ver"} ${acc === 1 ? "1 accesorio o pieza" : `${acc} accesorios y piezas`} que también salieron</button>` : "";
+    const va = document.getElementById("ver-accesorios");
+    if (va) va.onclick = () => { r.filtros.accesorios = !r.filtros.accesorios; dibujar(); };
+    activarOfertas();
+  }
+
+  function activarOfertas() {
+    $lista.querySelectorAll(".ir-tienda").forEach((b) => (b.onclick = () => irATienda(mostradas[Number(b.dataset.i)], b)));
+    $lista.querySelectorAll(".vigilar-oferta").forEach((b) => (b.onclick = () => hojaVigilar(mostradas[Number(b.dataset.i)], e.para, r)));
+    $lista.querySelectorAll(".otras-tiendas").forEach((b) => (b.onclick = () => {
+      r.filtros.repetidos = true;
+      const grupo = mostradas[Number(b.dataset.i)].grupo;
+      dibujar();
+      $lista.querySelector(`.oferta[data-i="${mostradas.findIndex((o) => o.grupo === grupo)}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }));
+  }
+
+  async function irATienda(o, boton) {
+    // La ventana se abre en el toque (si no, el teléfono la bloquea) y luego se le pone la liga directa.
+    const ventana = window.open("", "_blank");
+    const textoAntes = boton.textContent;
+    boton.disabled = true; boton.textContent = "Abriendo…";
+    let url = null;
+    if (o.token) {
+      const d = await buscarRapido({ accion: "liga", token: o.token, tienda: o.tienda, pais: o.pais });
+      url = d?.tienda?.url || null;
+    }
+    url ||= o.liga;
+    boton.disabled = false; boton.textContent = textoAntes;
+    db.from("clics").insert({ busqueda: r.busquedas[o.pais] ?? null, tienda: o.tienda, precio_mxn: o.total_mxn, url }).then(() => {});
+    if (!url) { ventana?.close(); return aviso("No encontré la liga de esa tienda.", "error"); }
+    if (ventana) ventana.location.href = url; else location.href = url;
+  }
+
+  document.querySelectorAll(".lado").forEach((b) => (b.onclick = () => { r.filtros.lado = b.dataset.v; pantallaResultados(texto); }));
+  document.querySelectorAll(".filtro").forEach((b) => (b.onclick = () => {
+    const f = b.dataset.f;
+    if (f === "orden") r.filtros.orden = r.filtros.orden === "calificacion" ? "precio" : "calificacion";
+    else r.filtros[f] = !r.filtros[f];
+    b.setAttribute("aria-pressed", String(f === "orden" ? r.filtros.orden === "calificacion" : r.filtros[f]));
+    if (navigator.vibrate) navigator.vibrate(8);
+    dibujar();
+  }));
+  document.getElementById("a-fondo").onclick = () => { flujo = nuevoFlujo(texto); guardarBorrador(); location.hash = "#/afinar"; };
+  dibujar();
+
+  r.dibujar = dibujar;   // las respuestas que van llegando pintan la pantalla que esté a la vista
+  r.enCurso ||= {};
+  for (const lado of lados) {
+    if (r.listas[lado] || r.enCurso[lado]) continue;
+    delete r.errores[lado];
+    r.enCurso[lado] = true;
+    buscarRapido({ texto, consulta, lado }).then((d) => {
+      r.enCurso[lado] = false;
+      if (d?.error) r.errores[lado] = d.error;
+      else { r.listas[lado] = d.resultados || []; r.tc = d.tc || r.tc; r.busquedas[lado] = d.busqueda; }
+      if (rapida === r && location.hash.startsWith("#/resultados/")) r.dibujar();
+    });
+  }
+}
+
+/** Hoja de abajo: para quién y a qué precio avisar. */
+function hojaVigilar(o, paraSugerido, r) {
+  const usd = o.moneda === "USD";
+  const meta = Math.floor(o.precio * 0.9);
+  const hoja = document.createElement("div");
+  hoja.className = "hoja-fondo";
+  hoja.innerHTML = `
+    <form class="hoja" role="dialog" aria-modal="true" aria-labelledby="hoja-titulo">
+      <h2 id="hoja-titulo">Vigilar este precio</h2>
+      <p class="suave dos-lineas">${esc(o.titulo)} · ${esc(o.tienda)}</p>
+      <label for="meta">Avísame si baja a</label>
+      <div class="fila-meta"><span class="moneda">${usd ? "US$" : "$"}</span><input id="meta" inputmode="decimal" value="${meta}"></div>
+      <p class="suave pequeno">Hoy cuesta ${usd ? dolares(o.precio) : pesos(o.precio)}. Lo reviso todos los días.</p>
+      <label for="para-v">¿Para quién es?</label>
+      <input id="para-v" value="${esc(paraSugerido || "")}" placeholder="Para mí">
+      <div class="fila-botones">
+        <button class="boton" type="button" id="cancelar-v">Cancelar</button>
+        <button class="boton principal" type="submit">Vigilar</button>
+      </div>
+    </form>`;
+  document.body.appendChild(hoja);
+  const cerrar = () => hoja.remove();
+  hoja.onclick = (ev) => { if (ev.target === hoja) cerrar(); };
+  hoja.querySelector("#cancelar-v").onclick = cerrar;
+  hoja.querySelector("form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const b = hoja.querySelector("[type=submit]");
+    b.disabled = true; b.textContent = "Guardando…";
+    const valor = Number(String(hoja.querySelector("#meta").value).replace(/[^\d.]/g, "")) || null;
+    // La liga directa de la tienda es la que se revisa cada día
+    const d = o.token ? await buscarRapido({ accion: "liga", token: o.token, tienda: o.tienda, pais: o.pais }) : null;
+    const { error } = await db.rpc("vigilar_oferta", {
+      oferta: { titulo: o.titulo, tienda: d?.tienda?.nombre || o.tienda, precio: d?.tienda?.precio ?? o.precio, moneda: o.moneda,
+        pais: o.pais, imagen: o.imagen, url: d?.tienda?.url || o.liga, total_mxn: o.total_mxn, consulta: r.consulta },
+      para: hoja.querySelector("#para-v").value.trim() || null,
+      meta: valor,
+    });
+    if (error) { b.disabled = false; b.textContent = "Vigilar"; return aviso(mensajeBase(error, "No se pudo guardar. Intenta otra vez."), "error"); }
+    cerrar();
+    aviso("¡Listo! Ya lo vigilo. Te aviso cuando baje.");
+    ofrecerAvisos();
+  };
+  hoja.querySelector("#meta").focus();
+}
+
+// ---------- avisos de la app (notificaciones del celular) ----------
+const esIphone = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const instalada = () => window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+
+/** "activo" | "apagado" | "bloqueado" | "instalar" (iPhone sin instalar) | "no-sirve" */
+async function estadoAvisos() {
+  if (esIphone && !instalada()) return "instalar";
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "no-sirve";
+  if (Notification.permission === "denied") return "bloqueado";
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    return sub && Notification.permission === "granted" ? "activo" : "apagado";
+  } catch { return "apagado"; }
+}
+
+function llaveBytes(b64) {
+  const s = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(s, (c) => c.charCodeAt(0));
+}
+
+async function activarAvisos() {
+  const estado = await estadoAvisos();
+  if (estado === "instalar") { aviso("En iPhone primero ponla en tu pantalla de inicio (Compartir ⬆︎ → Agregar a inicio) y ábrela desde ahí."); return false; }
+  if (estado === "no-sirve") { aviso("Este navegador no recibe avisos. Abre la app en Chrome (Android) o instálala en el iPhone.", "error"); return false; }
+  if (estado === "bloqueado") { aviso("Los avisos están bloqueados. Actívalos en los permisos del navegador para esta página.", "error"); return false; }
+  const permiso = await Notification.requestPermission();
+  if (permiso !== "granted") { aviso("Sin permiso no te puedo avisar. Puedes activarlo después en Ajustes."); return false; }
+  try {
+    const { data } = await db.from("ajustes").select("valor").eq("clave", "vapid_publica").single();
+    if (!data?.valor) throw new Error("sin llave");
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription())
+      || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: llaveBytes(data.valor) });
+    const j = sub.toJSON();
+    const aparato = /android/i.test(navigator.userAgent) ? "Android" : esIphone ? "iPhone" : "Computadora";
+    const { error } = await db.from("avisos_app").upsert(
+      { usuario: usuario.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, aparato, fallas: 0 },
+      { onConflict: "endpoint" });
+    if (error) throw error;
+    aviso("¡Listo! Los avisos te llegan a este celular.");
+    return true;
+  } catch {
+    aviso("No se pudieron activar los avisos. Intenta otra vez.", "error");
+    return false;
+  }
+}
+
+/** Después de vigilar algo: si este celular aún no recibe avisos, lo ofrece con un toque. */
+async function ofrecerAvisos() {
+  const estado = await estadoAvisos();
+  if (estado === "activo" || estado === "no-sirve") return;
+  try { if (Number(localStorage.getItem("avisos-ofrecido") || 0) > Date.now() - 3 * 86400000) return; localStorage.setItem("avisos-ofrecido", String(Date.now())); } catch {}
+  const hoja = document.createElement("div");
+  hoja.className = "hoja-fondo";
+  hoja.innerHTML = `
+    <div class="hoja" role="dialog" aria-modal="true" aria-labelledby="h-avisos">
+      <h2 id="h-avisos">¿Te aviso en este celular?</h2>
+      <p class="suave">Te llega una notificación, como las de WhatsApp, cuando baje el precio o cuando convenga comprar.</p>
+      ${estado === "instalar" ? `<p class="nota">En iPhone primero pon la app en tu pantalla de inicio: toca Compartir ⬆︎ y luego «Agregar a inicio». Ábrela desde ahí y activa los avisos en Ajustes.</p>` : ""}
+      <div class="fila-botones">
+        <button class="boton" id="luego">Ahora no</button>
+        ${estado === "instalar" ? "" : `<button class="boton principal" id="si-avisos">Sí, avísame</button>`}
+      </div>
+    </div>`;
+  document.body.appendChild(hoja);
+  hoja.querySelector("#luego").onclick = () => hoja.remove();
+  const si = hoja.querySelector("#si-avisos");
+  if (si) si.onclick = async () => { si.disabled = true; await activarAvisos(); hoja.remove(); };
 }
 
 // ---------- casas y departamentos ----------
@@ -1056,7 +1351,7 @@ async function pantallaSolicitud(id) {
         <h1>Listo, ya estoy buscando tus mejores opciones</h1>
         <section class="tarjeta">
           <span class="titulo">“${esc(s.texto)}”</span>
-          <p class="suave">${esCasa ? "Reviso anuncios en Vivanuncios, Mercado Libre, Lamudi y más, comparo precios por colonia y aparto los sospechosos." : "Reviso modelos, precios en México y Estados Unidos, y si el descuento es real."} ${cuandoLlega(s.creado)}; te aviso por Telegram. Puedes cerrar la app.</p>
+          <p class="suave">${esCasa ? "Reviso anuncios en Vivanuncios, Mercado Libre, Lamudi y más, comparo precios por colonia y aparto los sospechosos." : "Reviso modelos, precios en México y Estados Unidos, y si el descuento es real."} ${cuandoLlega(s.creado)}; te aviso en el celular. Puedes cerrar la app.</p>
         </section>
         ${conocidos}
         <a class="boton principal" href="#/hoy">Volver a mi lista</a>
@@ -1485,7 +1780,6 @@ async function pantallaFamilia() {
 // ---------- ajustes ----------
 async function pantallaAjustes() {
   const [{ data: perfil }, uso] = await Promise.all([db.from("perfiles").select("*").eq("id", usuario.id).single(), leerUso()]);
-  const conectado = !!perfil?.telegram_chat_id;
   pintar(`
     <main>
       <p class="ceja">Ajustes</p>
@@ -1498,12 +1792,10 @@ async function pantallaAjustes() {
         <input id="nombre" value="${esc(perfil?.nombre || "")}" autocomplete="name">
         <button class="boton" type="submit">Guardar</button>
       </form>
-      <section class="tarjeta pila">
-        <span class="titulo">Avisos por Telegram</span>
-        ${conectado
-          ? `<p><span class="insignia verde">Conectado</span></p><p class="suave">Te llegan los avisos de tus productos.</p>`
-          : `<p class="suave">Toca el botón, se abre Telegram y le das a <b>Iniciar</b>. Con eso quedas conectado (tarda hasta una hora en confirmarse).</p>
-             <button class="boton principal" id="telegram">Conectar Telegram</button>`}
+      <section class="tarjeta pila" id="avisos">
+        <span class="titulo">Avisos en este celular</span>
+        <p class="suave">Te llega una notificación cuando baja el precio de lo que vigilas o cuando convenga comprar.</p>
+        <div id="avisos-estado"><div class="esqueleto" style="height:48px"></div></div>
       </section>
       <section class="tarjeta pila">
         <span class="titulo">Tamaño de la letra</span>
@@ -1528,17 +1820,29 @@ async function pantallaAjustes() {
     const { error } = await db.from("perfiles").update({ nombre: document.getElementById("nombre").value.trim() }).eq("id", usuario.id);
     aviso(error ? "No se pudo guardar." : "Guardado.", error ? "error" : "");
   };
-  const tg = document.getElementById("telegram");
-  if (tg) tg.onclick = async () => {
-    let codigo = perfil?.codigo_telegram;
-    if (!codigo) {
-      codigo = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
-      const { error } = await db.from("perfiles").update({ codigo_telegram: codigo }).eq("id", usuario.id);
-      if (error) return aviso("No se pudo preparar la conexión.", "error");
-    }
-    location.href = `https://t.me/${BOT_TELEGRAM}?start=${codigo}`;
-  };
+  pintarAvisos();
   document.getElementById("salir").onclick = async () => { await db.auth.signOut(); location.hash = ""; arrancar(); };
+}
+
+async function pintarAvisos() {
+  const caja = document.getElementById("avisos-estado");
+  if (!caja) return;
+  const estado = await estadoAvisos();
+  const textos = {
+    activo: `<p><span class="insignia verde">Activados</span></p><button class="boton" id="prueba-aviso">Mandarme un aviso de prueba</button>`,
+    apagado: `<button class="boton principal" id="activar-avisos">Activar avisos</button>`,
+    bloqueado: `<p class="nota">Los avisos están bloqueados para esta página. Ábrelos en los permisos del navegador (el candado junto a la dirección) y vuelve a intentar.</p>`,
+    instalar: `<p class="nota">En iPhone primero pon la app en tu pantalla de inicio: en Safari toca Compartir ⬆︎ y luego «Agregar a inicio». Ábrela desde ahí y vuelve a esta pantalla.</p>`,
+    "no-sirve": `<p class="nota">Este navegador no recibe avisos. En Android usa Chrome; en iPhone, instala la app en la pantalla de inicio.</p>`,
+  };
+  caja.innerHTML = textos[estado];
+  const act = document.getElementById("activar-avisos");
+  if (act) act.onclick = async () => { act.disabled = true; await activarAvisos(); pintarAvisos(); };
+  const prueba = document.getElementById("prueba-aviso");
+  if (prueba) prueba.onclick = async () => {
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification("Cazador de Ofertas", { body: "Así te van a llegar los avisos de precios.", icon: "icono-192.png", badge: "icono-192.png" });
+  };
 }
 
 // ---------- rutas ----------
@@ -1548,6 +1852,7 @@ async function enrutar() {
   if (ruta === "producto" && id) return pantallaProducto(id);
   if (ruta === "agregar") return pantallaAgregar(flujo?.texto || "");
   if (ruta === "afinar") return pantallaAfinar();
+  if (ruta === "resultados" && id) return pantallaResultados(decodeURIComponent(location.hash.slice("#/resultados/".length)));
   if (ruta === "solicitud" && id) return pantallaSolicitud(id);
   if (ruta === "ajustes") return pantallaAjustes();
   if (ruta === "tallas") return pantallaTallas();
