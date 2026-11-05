@@ -1,8 +1,8 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=9";
-import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js?v=9";
-import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, total as totalOferta, FRANQUICIA_USD } from "./ofertas.js?v=9";
-import { TIENDAS_MX, TIENDAS_US, cadenaDe, porUnidad, veredictoSuper, preciosEnLinea, mejorTiendaLista, haceCuanto } from "./super.js?v=9";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=10";
+import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js?v=10";
+import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, total as totalOferta, FRANQUICIA_USD } from "./ofertas.js?v=10";
+import { TIENDAS_MX, TIENDAS_US, cadenaDe, esLocal, porUnidad, veredictoSuper, preciosEnLinea, mejorTiendaLista, haceCuanto } from "./super.js?v=10";
 
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
 const $app = document.getElementById("app");
@@ -1270,15 +1270,20 @@ async function pantallaPrecio(codigo) {
       const c = cadenaDe(f.tienda);
       if (!porTienda.has(c) || f.precio < porTienda.get(c).precio) porTienda.set(c, { ...f, tienda: c });
     }
-    const lista = [...porTienda.values()].sort((a, b) => a.precio - b.precio);
-    if (!lista.length) { $otros.innerHTML = `<p class="suave">Todavía nadie de la familia lo ha visto en otra tienda.</p>`; return lista; }
-    $otros.innerHTML = lista.map((f, i) => {
+    const pais = tiendaActual()?.pais || "mx";
+    const todas = [...porTienda.values()].sort((a, b) => a.precio - b.precio);
+    // Las que la familia vio cuentan siempre; las de internet solo si están en Tijuana o entregan aquí
+    const lista = todas.filter((f) => f.fuente !== "Precio en línea" || esLocal(f.tienda, pais));
+    const lejos = todas.filter((f) => !lista.includes(f));
+    const fila = (f, i) => {
       const u = porUnidad(f.precio, f.cantidad || ficha?.cantidad);
       return `<div class="precio-fila ${i === 0 ? "la-menor" : ""} ${destacar && cadenaDe(destacar) === f.tienda ? "aqui" : ""}">
         <div><b>${esc(f.tienda)}</b>${i === 0 ? ` <span class="etiqueta buena">La más barata</span>` : ""}<p class="suave pequeno">${esc(f.fuente)}</p></div>
         <div class="derecha"><b class="precio-fila-num">${dinero(f.precio)}</b>${u ? `<p class="suave pequeno">${dinero(Math.round(u.valor * 100) / 100)} ${u.texto}</p>` : ""}</div>
       </div>`;
-    }).join("");
+    };
+    $otros.innerHTML = (lista.length ? lista.map(fila).join("") : `<p class="precio-fila suave">Todavía nadie de la familia lo ha visto en otra tienda de aquí.</p>`)
+      + (lejos.length ? `<details class="lejos"><summary>Otras ${lejos.length} tiendas en línea (de otras ciudades)</summary>${lejos.map((f) => fila(f, -1)).join("")}</details>` : "");
     return lista;
   };
 
@@ -1347,7 +1352,7 @@ async function pantallaSuper() {
   const precios = {};
   await Promise.all(lista.filter((a) => a.codigo).map(async (a) => {
     const { data } = await db.rpc("ultimos_precios", { cod: a.codigo });
-    precios[a.id] = [...(data || []).filter((p) => p.moneda === "MXN"), ...enLineaGuardado(a.codigo).filter((p) => p.moneda === "MXN")];
+    precios[a.id] = [...(data || []).filter((p) => p.moneda === "MXN"), ...enLineaGuardado(a.codigo).filter((p) => p.moneda === "MXN" && esLocal(p.tienda))];
   }));
   const ranking = mejorTiendaLista(lista, precios);
   const mejor = ranking[0];

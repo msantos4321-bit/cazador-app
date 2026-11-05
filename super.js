@@ -7,6 +7,15 @@ export const TIENDAS_MX = ["Walmart", "Soriana", "Calimax", "Smart & Final", "Co
   "Chedraui", "Oxxo", "Farmacia"];
 export const TIENDAS_US = ["Walmart", "Target", "Costco", "Smart & Final", "Vons", "Food 4 Less", "Home Depot", "Best Buy"];
 
+// Tiendas que sí sirven en Tijuana (físicas o que entregan aquí); las demás de internet se muestran aparte
+const LOCALES_MX = ["Walmart", "Soriana", "Calimax", "Smart & Final", "Costco", "Sam's Club", "Ley", "Bodega Aurrera", "Chedraui",
+  "Oxxo", "Farmacia", "Amazon", "Mercado Libre", "Coppel", "Liverpool", "Home Depot"];
+export function esLocal(tienda, pais = "mx") {
+  if (pais === "us") return true;
+  const c = cadenaDe(tienda);
+  return LOCALES_MX.some((l) => sin(l) === sin(c));
+}
+
 /** Nombre de cadena tal como lo dice Google ("Walmart.com.mx", "Soriana Súper") → la cadena. */
 export function cadenaDe(nombre) {
   const n = sin(nombre);
@@ -17,11 +26,19 @@ export function cadenaDe(nombre) {
 /** "1 L" → {valor:1000, unidad:"ml"}; "1.5 kg" → 1500 g; "6 x 355 ml" → 2130 ml; "12 piezas" → 12 pz. */
 export function cantidadBase(texto) {
   const t = sin(texto).replace(/,/g, ".");
-  const m = t.match(/(?:(\d+)\s*-?\s*(?:x|pack(?: de)?|paquete(?: de)?)\s*)?(\d+(?:\.\d+)?)\s*(kg|kilos?|g|gr|gramos?|l|lt|litros?|ml|mililitros?|oz|fl oz|lb|pzas?|piezas?|pz|unidades|ct|count)\b/);
+  // Primero litros/kilos (aunque diga "12 piezas de 1 L"); si no hay, piezas
+  const m = t.match(/(?:(\d+)\s*-?\s*(?:x|pack(?: de)?|paquete(?: de)?)\s*)?(\d+(?:\.\d+)?)\s*(kg|kilos?|g|gr|gramos?|l|lt|litros?|ml|mililitros?|fl oz|oz|lb)\b/)
+    || t.match(/()(\d+(?:\.\d+)?)\s*(pzas?|piezas?|pz|unidades|ct|count)\b/);
   if (!m) return null;
-  const veces = m[1] ? Number(m[1]) : 1;
-  let valor = Number(m[2]) * veces;
+  let veces = m[1] ? Number(m[1]) : 1;
   const u = m[3];
+  // Paquetes escritos aparte: "1 L caja con 12", "12 piezas de 1 L", "paquete de 6"
+  if (veces === 1 && !/^(pzas?|piezas?|pz|unidades|ct|count)$/.test(u)) {
+    const p = t.match(/(?:caja|paquete|pack|bulto|charola|six)\s*(?:con|de)?\s*(\d{1,3})\b|\b(\d{1,3})\s*(?:piezas|pzas?|pz|unidades|pack|latas|botellas|cajas|envases)\b|\bx\s*(\d{1,3})\b/);
+    const n = p && Number(p[1] || p[2] || p[3]);
+    if (n > 1 && n <= 100) veces = n;
+  }
+  let valor = Number(m[2]) * veces;
   if (/^(kg|kilo)/.test(u)) return { valor: valor * 1000, unidad: "g" };
   if (/^(g|gr|gramo)/.test(u)) return { valor, unidad: "g" };
   if (/^(l|lt|litro)/.test(u)) return { valor: valor * 1000, unidad: "ml" };
@@ -96,7 +113,10 @@ export function preciosEnLinea(resultados, ficha) {
       mejores.set(sin(cadena), { tienda: cadena, precio: r.precio, cantidad: c ? r.titulo : ficha?.cantidad, fuente: "en línea", moneda: r.moneda, imagen: r.imagen });
     }
   }
-  return [...mejores.values()].sort((a, b) => a.precio - b.precio);
+  const lista = [...mejores.values()].sort((a, b) => a.precio - b.precio);
+  // Lo que cuesta 3 veces más que lo normal casi siempre es un paquete o caja (aunque el título no lo diga)
+  const mediana = lista.length ? lista[Math.floor(lista.length / 2)].precio : 0;
+  return lista.filter((x) => !mediana || x.precio <= mediana * 3);
 }
 
 /**
