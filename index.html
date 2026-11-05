@@ -379,11 +379,76 @@ h2.seccion{font-size:25px;margin:14px 0 -2px}
 .hoja h2{margin:0;font-family:'Newsreader',serif;font-weight:500;font-size:26px}
 .hoja input{font:inherit;font-size:18px;min-height:52px;border:1px solid var(--linea);border-radius:var(--r);padding:0 14px;background:var(--fondo);color:var(--tinta)}
 @keyframes aparecer{from{opacity:0}to{opacity:1}}
+/* Fase 2: ¿Es buen precio? */
+.atajos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.atajos .principal-atajo{grid-column:1 / -1;flex-direction:row;align-items:center;gap:16px;min-height:96px;padding:18px}
+.atajos .principal-atajo svg{width:40px;height:40px;flex:none}
+.atajos .principal-atajo b{font-size:21px}
+[hidden]{display:none!important}
+.atajo{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px 14px;border-radius:var(--r-grande);border:1px solid var(--linea);background:var(--tarjeta);box-shadow:var(--sombra);color:var(--tinta);text-decoration:none;font:inherit;text-align:left;cursor:pointer;min-height:104px}
+.atajo svg{color:var(--oro)}
+.atajo b{display:block;font-size:18px}
+.atajo small{display:block;color:var(--suave);font-size:14px;line-height:1.25;margin-top:2px}
+.atajo.principal-atajo{background:var(--acento);border-color:var(--acento);color:var(--acento-txt)}
+.atajo.principal-atajo svg{color:var(--mantequilla)}
+.atajo.principal-atajo small{color:inherit;opacity:.8}
+.atajo:active{transform:scale(.98)}
+.escaner{position:fixed;inset:0;background:#0B0D18;color:#fff;z-index:40;overflow:hidden}
+.escaner video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.marco{position:absolute;left:50%;top:42%;width:min(78vw,340px);height:min(42vw,190px);transform:translate(-50%,-50%);border-radius:24px;box-shadow:0 0 0 100vmax rgba(8,10,20,.55);border:3px solid rgba(255,255,255,.9)}
+.marco .linea{position:absolute;left:8%;right:8%;height:2px;top:50%;background:var(--mantequilla);box-shadow:0 0 12px var(--mantequilla);animation:barrer 1.8s ease-in-out infinite}
+@keyframes barrer{0%,100%{top:18%}50%{top:82%}}
+.escaner-arriba{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:calc(14px + env(safe-area-inset-top)) 16px 0}
+.cerrar{width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;text-decoration:none;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.tienda-chip{font:inherit;font-size:17px;font-weight:600;color:#fff;background:rgba(255,255,255,.18);border:0;border-radius:999px;padding:12px 18px;min-height:52px;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);cursor:pointer}
+.escaner-abajo{position:absolute;left:0;right:0;bottom:0;padding:24px 20px calc(24px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(8,10,20,.85) 35%);text-align:center;display:flex;flex-direction:column;gap:8px}
+.escaner-abajo h1{font-family:'Newsreader',serif;font-weight:500;font-size:30px;margin:0;color:#fff}
+.suave-claro{color:rgba(255,255,255,.8);margin:0 0 8px}
+.boton.claro-oscuro{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.35);color:#fff}
+.boton.claro-oscuro[aria-pressed="true"]{background:var(--mantequilla);color:#151933}
+.ficha{display:grid;grid-template-columns:96px 1fr;gap:16px;align-items:center}
+.ficha-foto{width:96px;height:96px;object-fit:contain;background:#fff;border-radius:var(--r);border:1px solid var(--linea);padding:6px}
+.ficha-foto.vacia{display:flex;align-items:center;justify-content:center;color:var(--tenue);background:var(--hundido);border-color:transparent}
+.h1-ficha{font-family:'Newsreader',serif;font-weight:500;font-size:27px;line-height:1.15;margin:2px 0}
+.tienda-linea{font:inherit;font-size:17px;background:var(--hundido);color:var(--tinta);border:0;border-radius:var(--r);padding:14px 16px;text-align:left;cursor:pointer}
+.cuanto h2{margin:0;font-family:'Newsreader',serif;font-weight:500;font-size:24px}
+.fila-meta.grande input{font-size:40px;min-height:68px;border:1px solid var(--linea);border-radius:var(--r);padding:0 14px;background:var(--fondo);color:var(--tinta)}
+.fila-meta.grande .moneda{font-family:'Newsreader',serif;font-size:34px;color:var(--suave)}
+.casilla{display:flex;align-items:center;gap:10px;font-size:17px;min-height:44px}
+.casilla input{width:24px;height:24px;accent-color:var(--acento)}
+.veredicto{display:grid;grid-template-columns:52px 1fr;gap:14px;align-items:start;border-radius:var(--r-grande);padding:18px;animation:aparecer .2s ease-out}
+.veredicto h2{margin:0 0 4px;font-family:'Newsreader',serif;font-weight:500;font-size:26px;line-height:1.15}
+.veredicto p{margin:0;font-size:17px;line-height:1.4}
+.veredicto-icono{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700}
+.veredicto.verde{background:var(--verde-f);color:var(--verde-t)}.veredicto.amarillo{background:var(--amarillo-f);color:var(--amarillo-t)}
+.veredicto.rojo{background:var(--rojo-f);color:var(--rojo-t)}.veredicto.gris{background:var(--gris-f);color:var(--gris-t)}
+.veredicto.verde .veredicto-icono{background:var(--verde-t);color:var(--verde-f)}.veredicto.amarillo .veredicto-icono{background:var(--amarillo-t);color:var(--amarillo-f)}
+.veredicto.rojo .veredicto-icono{background:var(--rojo-t);color:var(--rojo-f)}.veredicto.gris .veredicto-icono{background:var(--gris-t);color:var(--gris-f)}
+.otros-precios{display:flex;flex-direction:column;background:var(--tarjeta);border:1px solid var(--linea);border-radius:var(--r-grande);overflow:hidden;box-shadow:var(--sombra)}
+.otros-precios:empty{display:none}
+.precio-fila{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-top:1px solid var(--linea)}
+.precio-fila:first-child{border-top:0}
+.precio-fila p{margin:2px 0 0}
+.precio-fila.la-menor{background:var(--verde-f)}
+.precio-fila.aqui{box-shadow:inset 4px 0 0 var(--oro)}
+.precio-fila .derecha{text-align:right}
+.precio-fila-num{font-family:'Newsreader',serif;font-size:24px;font-weight:500}
+.tiendas{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tienda-op{font:inherit;font-size:17px;font-weight:600;min-height:54px;border-radius:var(--r);border:1px solid var(--linea);background:var(--fondo);color:var(--tinta);cursor:pointer}
+.tienda-op[aria-pressed="true"]{background:var(--acento);color:var(--acento-txt);border-color:var(--acento)}
+.lista-super{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.lista-super li{display:grid;grid-template-columns:56px 1fr auto auto;gap:10px;align-items:center;background:var(--tarjeta);border:1px solid var(--linea);border-radius:var(--r);padding:10px}
+.lista-super p{margin:2px 0 0}
+.miniatura.chica{width:56px;height:56px;padding:4px}
+.piezas{display:flex;align-items:center;gap:6px;font-weight:700}
+.mini{width:40px;height:40px;border-radius:50%;border:1px solid var(--linea);background:var(--fondo);color:var(--tinta);font:inherit;font-size:20px;cursor:pointer}
+.mini.quitar{color:var(--suave);font-size:16px}
+#comparacion:empty{display:none}
 </style>
 </head>
 <body>
 <div id="app"><main><p class="ceja">Cazador de Ofertas</p><h1>Cargando…</h1></main></div>
 <noscript><p style="padding:16px">Esta app necesita JavaScript activado.</p></noscript>
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=9"></script>
 </body>
 </html>

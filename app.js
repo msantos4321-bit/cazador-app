@@ -1,7 +1,8 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=8";
-import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js?v=8";
-import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, FRANQUICIA_USD } from "./ofertas.js?v=8";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=9";
+import { detectar, preguntasPara, esLiga, quitarAcentos, sugerir, entender, limpiarDictado, INICIOS } from "./categorias.js?v=9";
+import { consultaLimpia, presupuestoDe, preparar, filtrar, cuantosAccesorios, total as totalOferta, FRANQUICIA_USD } from "./ofertas.js?v=9";
+import { TIENDAS_MX, TIENDAS_US, cadenaDe, porUnidad, veredictoSuper, preciosEnLinea, mejorTiendaLista, haceCuanto } from "./super.js?v=9";
 
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
 const $app = document.getElementById("app");
@@ -183,6 +184,29 @@ function fechaHoy() {
   const t = new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Tijuana" });
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
+const atajosPrecio = () => `
+  <div class="atajos">
+    <a class="atajo principal-atajo" href="#/escanear">${ICONO_CAMARA}<span><b>Escanear un producto</b><small>Te digo si es buen precio y dónde está más barato</small></span></a>
+    <button class="atajo" type="button" id="pegar-liga">${ICONO_LIGA}<span><b>Pegar liga</b><small>¿Lo vi más caro?</small></span></button>
+    <a class="atajo" href="#/super">${ICONO_CARRITO}<span><b>Súper</b><small>¿Dónde me sale más barato?</small></span></a>
+  </div>`;
+/** "Pegar liga": lee el portapapeles si el teléfono deja; si no, enfoca el campo para pegar a mano. */
+function activarPegarLiga(campo) {
+  const b = document.getElementById("pegar-liga");
+  if (!b) return;
+  b.onclick = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      const liga = (t || "").match(/https?:\/\/\S+/)?.[0];
+      if (liga) { location.hash = `#/liga/${encodeURIComponent(liga)}`; return; }
+      aviso("Lo que copiaste no es una liga. Copia la liga y vuelve a tocar.");
+    } catch {
+      if (campo) { campo.focus(); aviso("Mantén presionado aquí y toca «Pegar»."); }
+      else location.hash = "#/agregar";
+    }
+  };
+}
+
 async function pantallaHoy() {
   pintar(esqueleto("Mi lista") + barra("hoy"));
   const desde = new Date(Date.now() - 90 * 86400000).toISOString();
@@ -258,6 +282,7 @@ async function pantallaHoy() {
     <main>
       <p class="ceja">${esc(fechaHoy())}</p>
       <h1>${saludo}</h1>
+      ${atajosPrecio()}
       ${uso?.pausado ? `<p class="nota">Tu cuenta está en pausa: no se hacen búsquedas ni se vigilan precios. Habla con Mauricio para reactivarla.</p>` : ""}
       ${chips ? `<div class="resumen">${chips}</div>` : ""}
       ${temporada}
@@ -274,6 +299,7 @@ async function pantallaHoy() {
       ${!tarjetas && !solicitudes ? `<section class="vacio">${ICONO_BOLSA}<p><b>Todavía no vigilas nada.</b></p><p class="suave">Toca <b>Buscar algo</b> y escribe lo que quieres comprar, como lo dirías en voz alta.</p><a class="boton principal" href="#/agregar">Buscar algo</a></section>` : ""}
       <p class="suave pequeno centro">Revisamos los precios solos todos los días.${uso?.invitado ? (uso.saldo !== undefined ? `<br>Te quedan <b>${Math.max(uso.saldo, 0)} créditos</b> este mes · <a href="#/ajustes">ver detalle</a>` : `<br>Este mes llevas ${uso.mis_busquedas} de ${uso.mi_cupo} búsquedas y vigilas ${uso.mis_vigilados} de ${uso.mi_tope} productos.`) : ""}</p>
     </main>${barra("hoy")}`);
+  activarPegarLiga(null);
 }
 
 // ---------- detalle ----------
@@ -420,6 +446,7 @@ async function pantallaAgregar(textoInicial = "") {
       <h1>¿Qué quieres comprar?</h1>
       <p class="suave">Escríbelo o díctalo como se lo dirías a alguien. En segundos te enseño los precios de México y Estados Unidos.</p>
       ${borrador ? `<button class="tarjeta borrador" id="seguir"><span class="suave pequeno">Te quedaste a medias</span><span class="titulo">“${esc(borrador.texto)}”</span><span class="enlace-falso">Continuar donde me quedé</span></button>` : ""}
+      ${atajosPrecio()}
       <form id="f-que" class="pila">
         <div class="campo-voz">
           <textarea id="que" rows="3" required placeholder="Ej. Una tele de 55 pulgadas para mi papá, que no pase de 8 mil pesos">${esc(textoInicial)}</textarea>
@@ -434,7 +461,7 @@ async function pantallaAgregar(textoInicial = "") {
         ${INICIOS.map((c) => `<button type="button" class="inicio" data-t="${esc(c.texto)}">${esc(c.etiqueta)}</button>`).join("")}
       </div>
       <div id="recientes"></div>
-      <p class="suave pequeno">También puedes pegar la liga de una tienda o de un anuncio de auto (Marketplace, Copart…) y te digo si el precio es bueno.</p>
+      <p class="suave pequeno">También puedes pegar aquí la liga de una tienda o de un anuncio de auto (Marketplace, Copart…) y te digo si el precio es bueno.</p>
     </main>${barra("agregar")}`);
   const que = document.getElementById("que");
   const ir = (texto) => {
@@ -442,6 +469,11 @@ async function pantallaAgregar(textoInicial = "") {
     if (!texto) return;
     // Productos: la lista al instante. Casas, autos y ligas siguen con sus preguntas.
     const cat = esLiga(texto) ? { id: "liga" } : detectar(texto);
+    if (cat.id === "liga" && !/(copart|iaai|marketplace|facebook\.com\/marketplace|autos\.mercadolibre|seminuevos|cars\.com|carfax)/i.test(texto)) {
+      flujo = null; borrarBorrador();
+      location.hash = `#/liga/${encodeURIComponent(texto)}`;
+      return;
+    }
     if (!["casa", "auto", "liga"].includes(cat.id)) {
       flujo = null; borrarBorrador();
       location.hash = `#/resultados/${encodeURIComponent(texto)}`;
@@ -483,6 +515,7 @@ async function pantallaAgregar(textoInicial = "") {
     lista.querySelectorAll(".sugerencia").forEach((b) => (b.onclick = () => { que.value = b.dataset.v; lista.hidden = true; ir(que.value); }));
   });
   activarMicrofono(que, document.getElementById("mic"), document.getElementById("voz"));
+  activarPegarLiga(que);
   document.getElementById("f-que").onsubmit = (e) => { e.preventDefault(); detenerVoz(); ir(que.value); };
 }
 
@@ -810,6 +843,7 @@ async function pantallaResultados(texto) {
   if (!rapida || rapida.texto !== texto) {
     rapida = { texto, consulta, listas: { mx: null, us: null }, errores: {}, tc: 18.6, busquedas: {},
       filtros: { lado: e.respuestas.lado || "todas", nuevo: false, confiables: false, tope: !!tope, accesorios: false, repetidos: false, orden: "precio" } };
+    if (referenciaPendiente?.texto === texto) { rapida.referencia = referenciaPendiente; referenciaPendiente = null; }
   }
   const r = rapida;
   const lados = r.filtros.lado === "mx" || r.filtros.lado === "us" ? [r.filtros.lado] : ["mx", "us"];
@@ -830,6 +864,7 @@ async function pantallaResultados(texto) {
         ${tope ? `<button class="chip filtro" data-f="tope" aria-pressed="${r.filtros.tope}">Hasta ${tope.moneda === "USD" ? dolares(tope.monto) : pesos(tope.monto)}</button>` : ""}
         <button class="chip filtro" data-f="orden" aria-pressed="${r.filtros.orden === "calificacion"}">Mejor calificadas</button>
       </div>
+      <div id="comparacion" aria-live="polite"></div>
       <p id="estado-busqueda" class="estado-busqueda" role="status"></p>
       <div id="lista-ofertas"></div>
       <div id="extras"></div>
@@ -853,6 +888,7 @@ async function pantallaResultados(texto) {
     const todas = preparar(listas, r.tc, r.consulta);
     mostradas = filtrar(todas, { ...r.filtros, lado: r.filtros.lado, tope: r.filtros.tope ? topePesos : null });
     const acc = cuantosAccesorios(todas);
+    pintarComparacion(pendientes.length);
     const fallidos = lados.filter((l) => r.errores[l]);
     $estado.innerHTML = pendientes.length
       ? `<span class="girando" aria-hidden="true"></span> Buscando en ${pendientes.map((l) => LADOS[l]).join(" y ")}…`
@@ -873,6 +909,25 @@ async function pantallaResultados(texto) {
     const va = document.getElementById("ver-accesorios");
     if (va) va.onclick = () => { r.filtros.accesorios = !r.filtros.accesorios; dibujar(); };
     activarOfertas();
+  }
+
+  /** Si vino de una liga pegada: ¿ese precio es bueno contra todo lo que encontré? */
+  function pintarComparacion(faltan) {
+    const ref = r.referencia, caja = document.getElementById("comparacion");
+    if (!ref || !caja) return;
+    if (!ref.precio) { caja.innerHTML = `<p class="nota">Comparando con lo que viste en ${esc(ref.tienda)}.</p>`; return; }
+    const suyo = totalOferta({ precio: ref.precio, envio: 0, moneda: ref.usd ? "USD" : "MXN" }, r.tc).total_mxn;
+    const exactas = mostradas.filter((o) => !o.parecido && o.estado === "nuevo");
+    if (!exactas.length) { caja.innerHTML = faltan ? "" : `<p class="nota">No encontré ese mismo modelo en otras tiendas para comparar.</p>`; return; }
+    const masBaratas = exactas.filter((o) => o.total_mxn < suyo * 0.98);
+    const min = exactas[0];
+    const color = !masBaratas.length ? "verde" : (1 - min.total_mxn / suyo) * 100 <= 10 ? "amarillo" : "rojo";
+    caja.innerHTML = `<section class="veredicto ${color}">
+      <span class="veredicto-icono" aria-hidden="true">${{ verde: "✓", amarillo: "≈", rojo: "!" }[color]}</span>
+      <div><h2>${!masBaratas.length ? "¡Buen precio!" : color === "amarillo" ? "Hay un poco más barato" : "Hay más barato"}</h2>
+      <p>${!masBaratas.length ? `Lo que viste en ${esc(ref.tienda)} (${pesos(suyo)}) es de lo más barato que encontré.`
+        : `En ${esc(ref.tienda)} cuesta ${pesos(suyo)}. ${masBaratas.length === 1 ? "Encontré 1 opción más barata" : `Encontré ${masBaratas.length} opciones más baratas`}: desde ${pesos(min.total_mxn)} en ${esc(min.tienda)} (ahorras ${pesos(suyo - min.total_mxn)}).`}</p></div>
+    </section>`;
   }
 
   function activarOfertas() {
@@ -973,6 +1028,396 @@ function hojaVigilar(o, paraSugerido, r) {
     ofrecerAvisos();
   };
   hoja.querySelector("#meta").focus();
+}
+
+// ---------- 2. ¿Es buen precio? Escáner, tienda, veredicto y lista del súper ----------
+const TIENDA_KEY = "tienda-actual";
+function tiendaActual() {
+  try {
+    const t = JSON.parse(localStorage.getItem(TIENDA_KEY) || "null");
+    return t && Date.now() - t.cuando < 3 * 3600000 ? t : null;   // se olvida a las 3 horas
+  } catch { return null; }
+}
+function ponerTienda(nombre, pais = "mx") {
+  try { localStorage.setItem(TIENDA_KEY, JSON.stringify({ nombre, pais, cuando: Date.now() })); } catch {}
+}
+const ICONO_CAMARA = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 8h3l1.6-2.2h6.8L17 8h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.2" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+const ICONO_LIGA = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+const ICONO_CARRITO = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="19" r="1.5" fill="currentColor"/><circle cx="17" cy="19" r="1.5" fill="currentColor"/></svg>`;
+
+/** Hoja para elegir en qué tienda está. */
+function hojaTienda(alElegir, alCerrar = () => {}) {
+  const actual = tiendaActual();
+  let pais = actual?.pais || "mx";
+  const hoja = document.createElement("div");
+  hoja.className = "hoja-fondo";
+  const pintarHoja = () => {
+    const lista = pais === "us" ? TIENDAS_US : TIENDAS_MX;
+    hoja.innerHTML = `
+      <div class="hoja" role="dialog" aria-modal="true" aria-labelledby="h-tienda">
+        <h2 id="h-tienda">¿En qué tienda estás?</h2>
+        <div class="segmentos" role="radiogroup" aria-label="País">
+          <button class="segmento pais-t" role="radio" data-p="mx" aria-checked="${pais === "mx"}">México</button>
+          <button class="segmento pais-t" role="radio" data-p="us" aria-checked="${pais === "us"}">EE. UU.</button>
+        </div>
+        <div class="tiendas">${lista.map((t) => `<button class="tienda-op" aria-pressed="${actual?.nombre === t && actual?.pais === pais}" data-t="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+        <input id="otra-tienda" placeholder="Otra tienda: escríbela" aria-label="Otra tienda">
+        <button class="boton" id="cerrar-tienda">Listo</button>
+      </div>`;
+    hoja.querySelectorAll(".pais-t").forEach((b) => (b.onclick = () => { pais = b.dataset.p; pintarHoja(); }));
+    hoja.querySelectorAll(".tienda-op").forEach((b) => (b.onclick = () => { ponerTienda(b.dataset.t, pais); hoja.remove(); alElegir(tiendaActual()); }));
+    hoja.querySelector("#cerrar-tienda").onclick = () => {
+      const otra = hoja.querySelector("#otra-tienda").value.trim();
+      if (otra) ponerTienda(otra, pais);
+      hoja.remove();
+      if (otra) alElegir(tiendaActual()); else alCerrar();
+    };
+  };
+  hoja.onclick = (ev) => { if (ev.target === hoja) { hoja.remove(); alCerrar(); } };
+  pintarHoja();
+  document.body.appendChild(hoja);
+}
+
+/** Dígito verificador de EAN-8/12/13/14: evita lecturas a medias. */
+function codigoValido(c) {
+  if (!/^\d{8}$|^\d{12,14}$/.test(c)) return false;
+  const d = c.split("").map(Number), control = d.pop();
+  const suma = d.reverse().reduce((s, n, i) => s + n * (i % 2 === 0 ? 3 : 1), 0);
+  return (10 - (suma % 10)) % 10 === control;
+}
+
+let detenerCamara = () => {};
+async function encenderLector(video, alLeer) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+  video.srcObject = stream;
+  await video.play();
+  let parado = false;
+  const parar = () => { parado = true; stream.getTracks().forEach((t) => t.stop()); };
+  const leido = (txt) => { if (!parado && codigoValido(txt)) { parar(); alLeer(txt); } };
+  if ("BarcodeDetector" in window) {
+    try {
+      const soporta = (await window.BarcodeDetector.getSupportedFormats?.()) || [];
+      const formatos = ["ean_13", "ean_8", "upc_a", "upc_e"].filter((f) => soporta.includes(f));
+      if (formatos.length) {
+        const det = new window.BarcodeDetector({ formats: formatos });
+        const ciclo = async () => {
+          if (parado) return;
+          try { const r = await det.detect(video); if (r[0]?.rawValue) leido(r[0].rawValue); } catch {}
+          if (!parado) setTimeout(ciclo, 120);
+        };
+        ciclo();
+        return { parar, stream };
+      }
+    } catch { /* sigue con el lector de respaldo */ }
+  }
+  // iPhone y navegadores sin lector propio
+  const { BrowserMultiFormatReader } = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
+  const ctl = await new BrowserMultiFormatReader().decodeFromVideoElement(video, (res) => { if (res) leido(res.getText()); });
+  return { parar: () => { try { ctl.stop(); } catch {} parar(); }, stream };
+}
+
+async function pantallaEscanear() {
+  const t = tiendaActual();
+  pintar(`
+    <div class="escaner">
+      <video id="camara" playsinline muted autoplay></video>
+      <div class="marco" aria-hidden="true"><i class="linea"></i></div>
+      <div class="escaner-arriba">
+        <a href="#/agregar" class="cerrar" aria-label="Cerrar">✕</a>
+        <button id="tienda-chip" class="tienda-chip">${t ? `En ${esc(t.nombre)}` : "¿En qué tienda estás?"} ▾</button>
+      </div>
+      <div class="escaner-abajo">
+        <h1 id="escaner-texto">Apunta al código de barras</h1>
+        <p class="suave-claro">Las rayitas del empaque. Se lee solo.</p>
+        <div class="fila-botones">
+          <button class="boton claro-oscuro" id="linterna" hidden>Linterna</button>
+          <button class="boton claro-oscuro" id="a-mano">Escribir el número</button>
+        </div>
+      </div>
+    </div>`);
+  const ponerChip = (n) => { const c = document.getElementById("tienda-chip"); if (c && n) c.textContent = `En ${n.nombre} ▾`; };
+  document.getElementById("tienda-chip").onclick = () => hojaTienda(ponerChip);
+  const aMano = () => {
+    detenerCamara();
+    const hoja = document.createElement("div");
+    hoja.className = "hoja-fondo";
+    hoja.innerHTML = `
+      <form class="hoja" role="dialog" aria-modal="true" aria-labelledby="h-numero">
+        <h2 id="h-numero">Escribe el número</h2>
+        <p class="suave">Son los números que vienen abajo de las rayitas del código de barras.</p>
+        <input id="numero-codigo" inputmode="numeric" autocomplete="off" placeholder="7501055900039" aria-label="Número del código de barras">
+        <div class="fila-botones"><button type="button" class="boton" id="volver-camara">Usar la cámara</button><button class="boton principal">Buscar</button></div>
+      </form>`;
+    document.body.appendChild(hoja);
+    hoja.querySelector("#volver-camara").onclick = () => { hoja.remove(); encender(); };
+    hoja.querySelector("form").onsubmit = (ev) => {
+      ev.preventDefault();
+      const limpio = hoja.querySelector("#numero-codigo").value.replace(/\D/g, "");
+      if (limpio.length < 8) return aviso("Faltan números: casi siempre son 13.");
+      hoja.remove();
+      location.hash = `#/precio/${limpio}`;
+    };
+    hoja.querySelector("#numero-codigo").focus();
+  };
+  document.getElementById("a-mano").onclick = aMano;
+  const texto = document.getElementById("escaner-texto");
+  const encender = async () => {
+    try {
+      const lector = await encenderLector(document.getElementById("camara"), (codigo) => {
+        if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
+        location.hash = `#/precio/${codigo}`;
+      });
+      detenerCamara = lector.parar;
+      const pista = lector.stream.getVideoTracks()[0];
+      if (pista?.getCapabilities?.().torch) {
+        const b = document.getElementById("linterna");
+        let prendida = false;
+        b.hidden = false;
+        b.onclick = async () => { prendida = !prendida; try { await pista.applyConstraints({ advanced: [{ torch: prendida }] }); b.setAttribute("aria-pressed", String(prendida)); } catch {} };
+      }
+    } catch (e) {
+      const sinPermiso = e?.name === "NotAllowedError" || e?.name === "SecurityError";
+      texto.textContent = sinPermiso ? "Necesito permiso para usar la cámara" : "No pude abrir la cámara";
+      texto.nextElementSibling.textContent = sinPermiso
+        ? "Toca el candado junto a la dirección y permite la cámara. O escribe el número del código."
+        : "Puedes escribir el número que viene abajo de las rayitas.";
+    }
+  };
+  window.addEventListener("hashchange", () => detenerCamara(), { once: true });
+  // Primero la tienda (para que el primer precio ya quede con su tienda); luego la cámara
+  if (!t) hojaTienda((n) => { ponerChip(n); encender(); }, encender);
+  else encender();
+}
+
+/** Precios que el escáner encontró en línea, guardados 7 días en este celular (para la lista del súper). */
+function enLineaGuardado(codigo, precios) {
+  const clave = `enlinea-${codigo}`;
+  try {
+    if (precios) { localStorage.setItem(clave, JSON.stringify({ cuando: Date.now(), precios })); return precios; }
+    const g = JSON.parse(localStorage.getItem(clave) || "null");
+    return g && Date.now() - g.cuando < 7 * 86400000 ? g.precios : [];
+  } catch { return precios || []; }
+}
+
+async function pantallaPrecio(codigo) {
+  const t = tiendaActual();
+  const moneda = t?.pais === "us" ? "USD" : "MXN";
+  const signo = moneda === "USD" ? "US$" : "$";
+  const dinero = (v) => (moneda === "USD" ? dolares(v) : "$" + Number(v).toLocaleString("es-MX", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }));
+  pintar(`
+    <main class="precio-pantalla">
+      <a class="volver" href="#/escanear">‹ Escanear otro</a>
+      <section class="ficha-producto" id="ficha"><div class="esqueleto" style="height:96px"></div></section>
+      <button class="tienda-linea" id="tienda-linea">${t ? `Estás en <b>${esc(t.nombre)}</b> · cambiar` : "¿En qué tienda estás? Toca para elegir"}</button>
+      <form class="cuanto tarjeta" id="f-cuanto">
+        <label for="precio-aqui"><h2>¿Cuánto cuesta aquí?</h2></label>
+        <div class="fila-meta grande"><span class="moneda">${signo}</span><input id="precio-aqui" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="Precio en el anaquel"></div>
+        <label class="casilla"><input type="checkbox" id="en-oferta"> Está en oferta</label>
+        <button class="boton principal" type="submit">¿Es buen precio?</button>
+      </form>
+      <div id="veredicto" aria-live="polite"></div>
+      <h2 class="seccion">Dónde lo he visto</h2>
+      <p id="estado-precios" class="estado-busqueda"><span class="girando" aria-hidden="true"></span> Buscando precios en otras tiendas…</p>
+      <div id="otros-precios" class="otros-precios"></div>
+      <div class="fila-botones">
+        <button class="boton" id="a-lista">${ICONO_CARRITO}<span>A mi lista</span></button>
+        <a class="boton" href="#/escanear">Escanear otro</a>
+      </div>
+    </main>${barra("agregar")}`);
+  document.getElementById("tienda-linea").onclick = () => hojaTienda(() => pantallaPrecio(codigo));
+
+  const $ficha = document.getElementById("ficha");
+  const $otros = document.getElementById("otros-precios");
+  const $estado = document.getElementById("estado-precios");
+  let ficha = null, familia = [], enLinea = enLineaGuardado(codigo);
+
+  const pintarFicha = () => {
+    if (!ficha) {
+      $ficha.innerHTML = `
+        <div class="tarjeta pila">
+          <span class="titulo">No conozco este producto</span>
+          <p class="suave">Dime qué es y lo guardo para toda la familia (código ${esc(codigo)}).</p>
+          <input id="que-es" placeholder="Ej. Leche Lala entera 1 litro" aria-label="Qué producto es">
+          <button class="boton principal" id="guardar-que-es">Guardar</button>
+        </div>`;
+      document.getElementById("guardar-que-es").onclick = async () => {
+        const nombre = document.getElementById("que-es").value.trim();
+        if (!nombre) return;
+        const m = nombre.match(/(\d+(?:[.,]\d+)?\s*(?:kg|g|gr|l|lt|litros?|ml|piezas?|pz))\b/i);
+        ficha = { codigo, nombre, marca: null, cantidad: m ? m[1] : null, imagen: null, fuente: "familia" };
+        db.from("codigos").insert(ficha).then(() => {});
+        pintarFicha();
+        buscarEnLinea(nombre);
+      };
+      return;
+    }
+    $ficha.innerHTML = `
+      <div class="ficha">
+        ${foto(ficha.imagen, "ficha-foto")}
+        <div><p class="ceja">${esc(ficha.marca || "Producto")}</p><h1 class="h1-ficha">${esc(ficha.nombre)}</h1>
+        ${ficha.cantidad ? `<p class="suave">${esc(ficha.cantidad)}</p>` : ""}</div>
+      </div>`;
+  };
+
+  const pintarOtros = (destacar = null) => {
+    const filas = [
+      ...familia.filter((f) => f.moneda === moneda).map((f) => ({ ...f, fuente: `${f.quien === "Tú" ? "Lo anotaste tú" : `Lo vio ${f.quien.split(" ")[0]}`} ${haceCuanto(f.creado)}${f.oferta ? " · en oferta" : ""}` })),
+      ...enLinea.filter((p) => p.moneda === moneda).map((p) => ({ ...p, fuente: "Precio en línea" })),
+    ];
+    const porTienda = new Map();
+    for (const f of filas) {
+      const c = cadenaDe(f.tienda);
+      if (!porTienda.has(c) || f.precio < porTienda.get(c).precio) porTienda.set(c, { ...f, tienda: c });
+    }
+    const lista = [...porTienda.values()].sort((a, b) => a.precio - b.precio);
+    if (!lista.length) { $otros.innerHTML = `<p class="suave">Todavía nadie de la familia lo ha visto en otra tienda.</p>`; return lista; }
+    $otros.innerHTML = lista.map((f, i) => {
+      const u = porUnidad(f.precio, f.cantidad || ficha?.cantidad);
+      return `<div class="precio-fila ${i === 0 ? "la-menor" : ""} ${destacar && cadenaDe(destacar) === f.tienda ? "aqui" : ""}">
+        <div><b>${esc(f.tienda)}</b>${i === 0 ? ` <span class="etiqueta buena">La más barata</span>` : ""}<p class="suave pequeno">${esc(f.fuente)}</p></div>
+        <div class="derecha"><b class="precio-fila-num">${dinero(f.precio)}</b>${u ? `<p class="suave pequeno">${dinero(Math.round(u.valor * 100) / 100)} ${u.texto}</p>` : ""}</div>
+      </div>`;
+    }).join("");
+    return lista;
+  };
+
+  async function buscarEnLinea(consulta) {
+    $estado.hidden = false;
+    const d = await buscarRapido({ texto: consulta, consulta, lado: t?.pais === "us" ? "us" : "mx" });
+    $estado.hidden = true;
+    if (!d?.error) enLinea = enLineaGuardado(codigo, preciosEnLinea(d.resultados, ficha));
+    pintarOtros();
+  }
+
+  const [rf, rv] = await Promise.all([
+    buscarRapido({ accion: "codigo", codigo }),
+    db.rpc("ultimos_precios", { cod: codigo }),
+  ]);
+  if (!location.hash.startsWith(`#/precio/${codigo}`)) return;
+  ficha = rf?.ficha || null;
+  familia = rv?.data || [];
+  pintarFicha();
+  pintarOtros();
+  if (ficha) buscarEnLinea(rf.consulta || ficha.nombre); else $estado.hidden = true;
+
+  document.getElementById("f-cuanto").onsubmit = async (ev) => {
+    ev.preventDefault();
+    let tienda = tiendaActual();
+    if (!tienda) return hojaTienda(() => document.getElementById("f-cuanto").requestSubmit());
+    const precioAqui = Number(String(document.getElementById("precio-aqui").value).replace(/[^\d.]/g, ""));
+    if (!precioAqui) { document.getElementById("precio-aqui").focus(); return aviso("Escribe el precio que dice el anaquel."); }
+    const oferta = document.getElementById("en-oferta").checked;
+    const lista = pintarOtros(tienda.nombre);
+    const v = veredictoSuper({ tienda: tienda.nombre, precio: precioAqui, cantidad: ficha?.cantidad },
+      lista.map((f) => ({ tienda: f.tienda, precio: f.precio, cantidad: f.cantidad || ficha?.cantidad })));
+    const icono = { verde: "✓", amarillo: "≈", rojo: "!", gris: "i" }[v.color];
+    document.getElementById("veredicto").innerHTML = `
+      <section class="veredicto ${v.color}">
+        <span class="veredicto-icono" aria-hidden="true">${icono}</span>
+        <div><h2>${esc(v.titulo)}</h2><p>${esc(v.detalle)}</p></div>
+      </section>`;
+    document.getElementById("veredicto").scrollIntoView({ behavior: "smooth", block: "center" });
+    if (navigator.vibrate) navigator.vibrate(v.color === "rojo" ? [40, 60, 40] : 25);
+    // Se guarda para la familia
+    const { error } = await db.from("precios_vistos").insert({
+      codigo, producto: ficha?.nombre || `Código ${codigo}`, cantidad: ficha?.cantidad || null,
+      tienda: tienda.nombre, pais: tienda.pais || "mx", precio: precioAqui, moneda, oferta,
+    });
+    if (!error) {
+      familia = [{ tienda: tienda.nombre, precio: precioAqui, moneda, oferta, creado: new Date().toISOString(), quien: "Tú", cantidad: ficha?.cantidad }, ...familia.filter((f) => cadenaDe(f.tienda) !== cadenaDe(tienda.nombre))];
+      pintarOtros(tienda.nombre);
+    }
+  };
+  document.getElementById("a-lista").onclick = async (ev) => {
+    const b = ev.currentTarget;
+    b.disabled = true;
+    const { error } = await db.from("lista_super").insert({ codigo, producto: ficha?.nombre || `Código ${codigo}`, cantidad: ficha?.cantidad || null, imagen: ficha?.imagen || null });
+    b.disabled = false;
+    if (error) return aviso("No se pudo agregar. Intenta otra vez.", "error");
+    b.innerHTML = `${ICONO_CARRITO}<span>En tu lista ✓</span>`;
+    aviso("Agregado a tu lista del súper.");
+  };
+}
+
+async function pantallaSuper() {
+  pintar(`<main><a class="volver" href="#/hoy">‹ Mi lista</a><p class="ceja">Lista del súper</p><h1>¿Dónde me sale más barata?</h1><div class="esqueleto tarjeta-esq"></div></main>${barra("hoy")}`);
+  const { data: articulos } = await db.from("lista_super").select("*").eq("comprado", false).order("creado");
+  const lista = articulos || [];
+  const precios = {};
+  await Promise.all(lista.filter((a) => a.codigo).map(async (a) => {
+    const { data } = await db.rpc("ultimos_precios", { cod: a.codigo });
+    precios[a.id] = [...(data || []).filter((p) => p.moneda === "MXN"), ...enLineaGuardado(a.codigo).filter((p) => p.moneda === "MXN")];
+  }));
+  const ranking = mejorTiendaLista(lista, precios);
+  const mejor = ranking[0];
+  const total = lista.length;
+  pintar(`
+    <main class="super">
+      <a class="volver" href="#/hoy">‹ Mi lista</a>
+      <p class="ceja">Lista del súper</p>
+      <h1>¿Dónde me sale más barata?</h1>
+      ${!total ? `<div class="vacio">${ICONO_CARRITO}<p class="titulo">Tu lista está vacía</p><p class="suave">Escanea lo que compras seguido y te digo en qué tienda te sale más barata toda la compra.</p></div>`
+        : mejor ? `
+        <section class="heroe">
+          <p class="ceja">Te conviene</p>
+          <h2>${esc(mejor.tienda)}</h2>
+          <p class="precio">${pesos(mejor.total)}${mejor.faltan ? ` <span class="suave">por ${mejor.tiene} de ${total} cosas</span>` : ""}</p>
+          ${ranking[1] ? `<p>${ranking[1].faltan === mejor.faltan && ranking[1].total > mejor.total ? `Ahorras ${pesos(ranking[1].total - mejor.total)} contra ${esc(ranking[1].tienda)}.` : `Después sigue ${esc(ranking[1].tienda)}.`}</p>` : ""}
+        </section>
+        <div class="otros-precios">${ranking.map((t, i) => `
+          <div class="precio-fila ${i === 0 ? "la-menor" : ""}"><div><b>${esc(t.tienda)}</b><p class="suave pequeno">${t.faltan ? `Sé el precio de ${t.tiene} de ${total}` : "Tengo el precio de todo"}</p></div>
+          <div class="derecha"><b class="precio-fila-num">${pesos(t.total)}</b></div></div>`).join("")}</div>`
+        : `<p class="nota">Todavía no tengo precios de estas cosas. Escanéalas en la tienda y anota cuánto cuestan.</p>`}
+      ${total ? `<h2 class="seccion">Tus cosas (${total})</h2>
+      <ul class="lista-super">${lista.map((a) => `
+        <li>${foto(a.imagen, "miniatura chica")}<div><b class="dos-lineas">${esc(a.producto)}</b><p class="suave pequeno">${esc(a.cantidad || "")}${(precios[a.id] || []).length ? "" : " · sin precios aún"}</p></div>
+          <div class="piezas"><button class="mini" data-menos="${a.id}" aria-label="Una menos">−</button><span>${a.piezas}</span><button class="mini" data-mas="${a.id}" aria-label="Una más">+</button></div>
+          <button class="mini quitar" data-quitar="${a.id}" aria-label="Quitar">✕</button></li>`).join("")}</ul>` : ""}
+      <a class="boton principal" href="#/escanear">${ICONO_CAMARA}<span>Escanear para agregar</span></a>
+      ${total ? `<button class="boton" id="ya-compre">Ya hice la compra (vaciar lista)</button>` : ""}
+    </main>${barra("hoy")}`);
+  const cambiar = async (id, cambios) => { await db.from("lista_super").update(cambios).eq("id", id); pantallaSuper(); };
+  document.querySelectorAll("[data-mas]").forEach((b) => (b.onclick = () => { const a = lista.find((x) => x.id == b.dataset.mas); cambiar(a.id, { piezas: Math.min(99, a.piezas + 1) }); }));
+  document.querySelectorAll("[data-menos]").forEach((b) => (b.onclick = () => { const a = lista.find((x) => x.id == b.dataset.menos); if (a.piezas > 1) cambiar(a.id, { piezas: a.piezas - 1 }); }));
+  document.querySelectorAll("[data-quitar]").forEach((b) => (b.onclick = () => cambiar(Number(b.dataset.quitar), { comprado: true })));
+  const ya = document.getElementById("ya-compre");
+  if (ya) ya.onclick = async () => { if (!confirm("¿Vaciar la lista del súper?")) return; await db.from("lista_super").update({ comprado: true }).eq("comprado", false); pantallaSuper(); };
+}
+
+/** Liga pegada: qué es, a cuánto lo viste y si hay más barato. */
+let referenciaPendiente = null;
+async function pantallaLiga(url) {
+  pintar(`<main><a class="volver" href="#/agregar">‹ Buscar otra cosa</a><p class="ceja">¿Es buen precio?</p><h1>Revisando la liga…</h1><div class="esqueleto tarjeta-esq"></div></main>${barra("agregar")}`);
+  const d = await buscarRapido({ accion: "pegada", url });
+  if (!location.hash.startsWith("#/liga/")) return;
+  if (d?.error || !d?.consulta) {
+    pintar(`<main><a class="volver" href="#/agregar">‹ Buscar otra cosa</a><h1>No pude leer esa liga</h1>
+      <p class="suave">Escribe qué producto es y te enseño los precios de todas las tiendas.</p>
+      <a class="boton principal" href="#/agregar">Escribir el producto</a></main>${barra("agregar")}`);
+    return;
+  }
+  const usd = (d.moneda || (d.pais === "us" ? "USD" : "MXN")).toUpperCase() === "USD";
+  pintar(`
+    <main>
+      <a class="volver" href="#/agregar">‹ Buscar otra cosa</a>
+      <p class="ceja">¿Es buen precio?</p>
+      <div class="ficha">${foto(d.imagen, "ficha-foto")}<div><p class="ceja">${esc(d.tienda)}</p><h1 class="h1-ficha">${esc(d.titulo || d.consulta)}</h1></div></div>
+      <form class="cuanto tarjeta" id="f-liga">
+        <label for="precio-liga"><h2>${d.precio ? "Precio en la liga" : "¿En cuánto lo viste?"}</h2></label>
+        <div class="fila-meta grande"><span class="moneda">${usd ? "US$" : "$"}</span><input id="precio-liga" inputmode="decimal" value="${d.precio ?? ""}" placeholder="0.00"></div>
+        <label for="buscar-como" class="suave pequeno">Lo buscaré como:</label>
+        <input id="buscar-como" value="${esc(d.consulta)}">
+        <button class="boton principal" type="submit">Comparar con todas las tiendas</button>
+      </form>
+    </main>${barra("agregar")}`);
+  document.getElementById("f-liga").onsubmit = (ev) => {
+    ev.preventDefault();
+    const precio = Number(String(document.getElementById("precio-liga").value).replace(/[^\d.]/g, "")) || null;
+    const texto = document.getElementById("buscar-como").value.trim() || d.consulta;
+    referenciaPendiente = { texto, tienda: d.tienda, precio, usd, url: d.url };
+    location.hash = `#/resultados/${encodeURIComponent(texto)}`;
+  };
 }
 
 // ---------- avisos de la app (notificaciones del celular) ----------
@@ -1850,12 +2295,17 @@ async function pintarAvisos() {
 
 // ---------- rutas ----------
 async function enrutar() {
+  document.querySelectorAll(".hoja-fondo").forEach((h) => h.remove());   // ninguna hoja se queda abierta al cambiar de pantalla
   if (!usuario) return pantallaEntrar();
   const [, ruta, id] = (location.hash || "#/hoy").split("/");
   if (ruta === "producto" && id) return pantallaProducto(id);
   if (ruta === "agregar") return pantallaAgregar(flujo?.texto || "");
   if (ruta === "afinar") return pantallaAfinar();
   if (ruta === "resultados" && id) return pantallaResultados(decodeURIComponent(location.hash.slice("#/resultados/".length)));
+  if (ruta === "escanear") return pantallaEscanear();
+  if (ruta === "precio" && id) return pantallaPrecio(id.replace(/\D/g, ""));
+  if (ruta === "super") return pantallaSuper();
+  if (ruta === "liga" && id) return pantallaLiga(decodeURIComponent(location.hash.slice("#/liga/".length)));
   if (ruta === "solicitud" && id) return pantallaSolicitud(id);
   if (ruta === "ajustes") return pantallaAjustes();
   if (ruta === "tallas") return pantallaTallas();
